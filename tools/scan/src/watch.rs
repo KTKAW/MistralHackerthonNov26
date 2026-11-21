@@ -5,10 +5,12 @@
 
 use crate::config::{self, FeedToggles};
 use crate::date;
+use crate::explore;
 use crate::json;
 use crate::merge;
 use crate::scan;
 use crate::sync;
+use crate::verify;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -154,17 +156,9 @@ pub fn run_watch(args: &WatchArgs) -> i32 {
     }
     let shard = args.shard.clone();
 
-    let inventory = match config::load_inventory(&cfg, None) {
-        Ok(inv) => inv,
-        Err(e) => {
-            eprintln!("kb-scan: {}", e);
-            return 2;
-        }
-    };
-
     // In shard mode a feed shard runs only that feed: force the toggles.
     let effective_cfg = match &shard {
-        Some(name) if name != "sync" => {
+        Some(name) if merge::SHARD_NAMES.contains(&name.as_str()) && name != "sync" && name != "explore" && name != "verify" => {
             let mut c = cfg.clone();
             c.feeds = FeedToggles {
                 kev: name == "kev",
@@ -177,6 +171,28 @@ pub fn run_watch(args: &WatchArgs) -> i32 {
         }
         _ => cfg.clone(),
     };
+
+    let do_sync = shard.as_deref().map(|s| s == "sync").unwrap_or(true);
+    let do_scan = shard.is_none() || (shard.as_deref() != Some("sync") && shard.as_deref() != Some("explore") && shard.as_deref() != Some("verify"));
+    let do_explore = shard.as_deref() == Some("explore");
+    let do_verify = shard.as_deref() == Some("verify");
+
+    let inventory = if do_scan {
+        match config::load_inventory(&effective_cfg, None) {
+            Ok(inv) => Some(inv),
+            Err(e) => {
+                eprintln!("kb-scan: {}", e);
+                return 2;
+            }
+        }
+    } else {
+        None
+    };
+
+    // explore rotation state (round-robin offset + jitter PRNG), kept across cycles
+    let mut rotation = 0usize;
+    let seed = date::now_secs() as u64 ^ ((std::process::id() as u64) << 32) ^ 0x9E3779B97F4A7C15;
+    let mut rng = explore::Rng::new(seed);
 
     let max_runs = effective_cfg.max_runs;
     let mut run = 0u64;
@@ -193,8 +209,6 @@ pub fn run_watch(args: &WatchArgs) -> i32 {
         eprintln!("kb-scan: cycle {} starting{}", run, shard.as_ref().map(|s| format!(" (shard {})", s)).unwrap_or_default());
         let stamp = date::file_stamp(date::now_secs());
 
-        let do_sync = shard.as_deref().map(|s| s == "sync").unwrap_or(true);
-        let do_scan = shard.is_none() || (shard.as_deref() != Some("sync"));
 
         // sync pass (report only)
         if do_sync {
@@ -215,7 +229,8 @@ pub fn run_watch(args: &WatchArgs) -> i32 {
 
         // scan pass
         if do_scan {
-            let scan_out = scan::run_scan(&effective_cfg, &inventory);
+            let inv = inventory.as_ref().expect("inventory loaded when scanning");
+            let scan_out = scan::run_scan(&effective_cfg, inv);
             if scan_out.had_errors {
                 any_errors = true;
             }
@@ -228,6 +243,34 @@ pub fn run_watch(args: &WatchArgs) -> i32 {
                 eprintln!("kb-scan: {}", e);
             }
             eprintln!("kb-scan: cycle {} wrote {}", run, scan_name);
+        }
+
+        // explore shard pass
+        if do_explore {
+            match explore::run_cycle(&effective_cfg, &out_dir, &mut rotation, &mut rng) {
+                Ok(sum) => eprintln!(
+                    "kb-scan: cycle {} explore wrote {} ({} tasks, {} agents, {} leads)",
+                    run, sum.queue_file, sum.tasks, sum.agents_spawned, sum.leads
+                ),
+                Err(e) => {
+                    eprintln!("kb-scan: cycle {} explore error: {}", run, e);
+                    any_errors = true;
+                }
+            }
+        }
+
+        // verify shard pass
+        if do_verify {
+            match verify::run_cycle(&effective_cfg, &out_dir) {
+                Ok(sum) => eprintln!(
+                    "kb-scan: cycle {} verify queue {} tasks, {} agents, {} verdicts",
+                    run, sum.tasks, sum.agents_spawned, sum.verdicts
+                ),
+                Err(e) => {
+                    eprintln!("kb-scan: cycle {} verify error: {}", run, e);
+                    any_errors = true;
+                }
+            }
         }
 
         if max_runs > 0 && run >= max_runs {

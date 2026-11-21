@@ -92,3 +92,7 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - manifest.json
 - advisories/scan-latest.md
 - tools/ (29 files)
+
+## [2026-11-21] edit | Explorer/verifier orchestration in kb-scan swarm (agent.rs, explore.rs, verify.rs, triage.json handoff)
+
+- tools/ (15 files)

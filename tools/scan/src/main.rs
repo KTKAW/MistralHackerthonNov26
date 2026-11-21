@@ -7,8 +7,10 @@
 
 #![forbid(unsafe_code)]
 
+mod agent;
 mod config;
 mod date;
+mod explore;
 mod feeds;
 mod git;
 mod http;
@@ -21,6 +23,7 @@ mod swarm;
 mod sync;
 mod triage;
 mod url;
+mod verify;
 mod watch;
 
 use json::Value;
@@ -37,7 +40,7 @@ USAGE:
   kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
                  [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME]
   kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
-                 [--force] [--stop-file FILE]
+                 [--force] [--stop-file FILE] [--run-id ID]
   kb-scan merge  [--out-dir DIR] [--out FILE] [--pretty]
 
 Exit codes: 0 ok · 2 usage/config error · 3 feed/git error (partial results reported) · 4 lock held.
@@ -278,6 +281,33 @@ fn cmd_self_test() -> i32 {
     let _ = std::fs::remove_dir_all(&mdir);
     check("merge-smoke", merge_ok.is_some());
 
+    // explore smoke: one stub-agent cycle (stub script, never a real model call)
+    let stub = format!("{}/tests/stub-agent.sh", env!("CARGO_MANIFEST_DIR"));
+    let edir = std::env::temp_dir().join(format!("kb-scan-selftest-explore-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&edir);
+    std::fs::create_dir_all(&edir).unwrap();
+    let qfile = edir.join("queries.txt");
+    std::fs::write(&qfile, "NVD CVE-2026 | NVD\nOSV malware npm\n").unwrap();
+    let mut ecfg = config::Config::default();
+    ecfg.http_timeout_secs = 5;
+    ecfg.explore.enabled = true;
+    ecfg.explore.max_per_cycle = 2;
+    ecfg.explore.queries_file = qfile.to_str().unwrap().to_string();
+    ecfg.explore.agent_cmd = vec!["sh".to_string(), stub.clone()];
+    ecfg.explore.agent_prompt_file = format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR"));
+    let mut rotation = 0usize;
+    let mut rng = explore::Rng::new(7);
+    let explore_ok = explore::run_cycle(&ecfg, &edir, &mut rotation, &mut rng)
+        .map(|sum| {
+            sum.agents_spawned == 2
+                && edir.join("explore").join(&sum.queue_file).exists()
+                && edir.join("leads.json").exists()
+                && std::fs::read_to_string(edir.join("leads.json")).map(|t| t.contains("kb-scan-leads/1")).unwrap_or(false)
+        })
+        .unwrap_or(false);
+    let _ = std::fs::remove_dir_all(&edir);
+    check("explore-stub-agent", explore_ok);
+
     if failures.is_empty() {
         println!("ok");
         0
@@ -420,7 +450,7 @@ fn cmd_watch(args: &[String]) -> i32 {
 fn cmd_swarm(args: &[String]) -> i32 {
     let flags = match parse_flags(
         args,
-        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file"],
+        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file", "run-id"],
     ) {
         Ok(f) => f,
         Err(e) => {
@@ -451,6 +481,7 @@ fn cmd_swarm(args: &[String]) -> i32 {
         pretty: flags.bool("pretty"),
         force: flags.bool("force"),
         stop_file: flags.get("stop-file").map(|s| s.to_string()),
+        run_id: flags.get("run-id").map(|s| s.to_string()),
     })
 }
 

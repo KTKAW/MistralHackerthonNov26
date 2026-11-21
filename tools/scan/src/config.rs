@@ -21,6 +21,50 @@ impl Default for FeedToggles {
 }
 
 #[derive(Clone, Debug)]
+pub struct ExploreCfg {
+    pub enabled: bool,
+    pub max_per_cycle: u64,
+    pub queries_file: String,
+    pub agent_cmd: Vec<String>,
+    pub agent_prompt_file: String,
+    pub sandbox_cmd: Vec<String>,
+}
+
+impl Default for ExploreCfg {
+    fn default() -> Self {
+        ExploreCfg {
+            enabled: false,
+            max_per_cycle: 5,
+            queries_file: "tools/scan/explore-queries.txt".to_string(),
+            agent_cmd: Vec::new(),
+            agent_prompt_file: "tools/scan/explore-prompt.md".to_string(),
+            sandbox_cmd: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct VerifyCfg {
+    pub enabled: bool,
+    pub max_per_cycle: u64,
+    pub agent_cmd: Vec<String>,
+    pub agent_prompt_file: String,
+    pub sandbox_cmd: Vec<String>,
+}
+
+impl Default for VerifyCfg {
+    fn default() -> Self {
+        VerifyCfg {
+            enabled: false,
+            max_per_cycle: 20,
+            agent_cmd: Vec::new(),
+            agent_prompt_file: "tools/scan/verify-prompt.md".to_string(),
+            sandbox_cmd: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
     pub inventory: String,
     pub interval_secs: u64,
@@ -32,6 +76,9 @@ pub struct Config {
     pub epss_threshold: f64,
     pub kev_recent_days: u64,
     pub feeds: FeedToggles,
+    pub explore: ExploreCfg,
+    pub verify: VerifyCfg,
+    pub workflow_root: String,
 }
 
 impl Default for Config {
@@ -47,6 +94,9 @@ impl Default for Config {
             epss_threshold: 0.5,
             kev_recent_days: 30,
             feeds: FeedToggles::default(),
+            explore: ExploreCfg::default(),
+            verify: VerifyCfg::default(),
+            workflow_root: "runs".to_string(),
         }
     }
 }
@@ -68,6 +118,43 @@ fn get_f64(v: &Value, key: &str) -> Result<f64, String> {
     v.get(key)
         .and_then(|x| x.as_f64())
         .ok_or_else(|| format!("config key {:?} must be a number", key))
+}
+
+fn get_str_array(v: &Value, key: &str) -> Result<Vec<String>, String> {
+    match v.get(key) {
+        None => Ok(Vec::new()),
+        Some(x) => {
+            let arr = x.as_array().ok_or_else(|| format!("config key {:?} must be an array of strings", key))?;
+            let mut out = Vec::new();
+            for item in arr {
+                out.push(item.as_str().ok_or_else(|| format!("config key {:?} must contain only strings", key))?.to_string());
+            }
+            Ok(out)
+        }
+    }
+}
+
+/// Parse an explore/verify sub-object strictly.
+fn parse_agent_block(val: &Value, is_explore: bool) -> Result<(bool, u64, Option<String>, Vec<String>, String, Vec<String>), String> {
+    let obj = val.as_obj().ok_or_else(|| format!("config key {:?} must be an object", if is_explore { "explore" } else { "verify" }))?;
+    let mut enabled = false;
+    let mut max_per_cycle = if is_explore { 5 } else { 20 };
+    let mut queries_file = None;
+    let mut agent_cmd = Vec::new();
+    let mut prompt_file = if is_explore { "tools/scan/explore-prompt.md" } else { "tools/scan/verify-prompt.md" }.to_string();
+    let mut sandbox_cmd = Vec::new();
+    for (k, v) in obj {
+        match k.as_str() {
+            "enabled" => enabled = v.as_bool().ok_or_else(|| "config \"enabled\" must be a boolean".to_string())?,
+            "max_per_cycle" => max_per_cycle = v.as_u64().ok_or_else(|| "config \"max_per_cycle\" must be a non-negative integer".to_string())?,
+            "queries_file" if is_explore => queries_file = Some(get_str(val, k)?),
+            "agent_cmd" => agent_cmd = get_str_array(val, k)?,
+            "agent_prompt_file" => prompt_file = get_str(val, k)?,
+            "sandbox_cmd" => sandbox_cmd = get_str_array(val, k)?,
+            other => return Err(format!("unknown {} key {:?}", if is_explore { "explore" } else { "verify" }, other)),
+        }
+    }
+    Ok((enabled, max_per_cycle, queries_file, agent_cmd, prompt_file, sandbox_cmd))
 }
 
 /// Parse config JSON strictly. Unknown keys are an error.
@@ -95,6 +182,28 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
                 cfg.epss_threshold = f;
             }
             "kev_recent_days" => cfg.kev_recent_days = get_u64(&v, k)?,
+            "workflow_root" => cfg.workflow_root = get_str(&v, k)?,
+            "explore" => {
+                let (enabled, max_per_cycle, queries_file, agent_cmd, prompt_file, sandbox_cmd) = parse_agent_block(val, true)?;
+                cfg.explore = ExploreCfg {
+                    enabled,
+                    max_per_cycle,
+                    queries_file: queries_file.unwrap_or_else(|| ExploreCfg::default().queries_file),
+                    agent_cmd,
+                    agent_prompt_file: prompt_file,
+                    sandbox_cmd,
+                };
+            }
+            "verify" => {
+                let (enabled, max_per_cycle, _qf, agent_cmd, prompt_file, sandbox_cmd) = parse_agent_block(val, false)?;
+                cfg.verify = VerifyCfg {
+                    enabled,
+                    max_per_cycle,
+                    agent_cmd,
+                    agent_prompt_file: prompt_file,
+                    sandbox_cmd,
+                };
+            }
             "feeds" => {
                 let fobj = val.as_obj().ok_or_else(|| "config key \"feeds\" must be an object".to_string())?;
                 for (fk, fv) in fobj {
@@ -211,6 +320,34 @@ mod tests {
         assert_eq!(cfg.interval_secs, 5);
         assert!(cfg.feeds.nvd);
         assert!((cfg.epss_threshold - 0.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn config_explore_verify_workflow_root() {
+        // defaults: disabled, workflow_root "runs"
+        let cfg = parse_config("{}").unwrap();
+        assert!(!cfg.explore.enabled && !cfg.verify.enabled);
+        assert_eq!(cfg.workflow_root, "runs");
+        assert_eq!(cfg.explore.max_per_cycle, 5);
+        assert_eq!(cfg.verify.max_per_cycle, 20);
+        let cfg = parse_config(
+            r#"{"workflow_root": "runs",
+                "explore": {"enabled": true, "max_per_cycle": 3, "queries_file": "q.txt",
+                             "agent_cmd": ["sh", "stub.sh"], "agent_prompt_file": "p.md",
+                             "sandbox_cmd": ["bwrap", "--ro-bind", "/", "/"]},
+                "verify": {"enabled": true, "agent_cmd": ["vibe", "-p"]}}"#,
+        )
+        .unwrap();
+        assert!(cfg.explore.enabled && cfg.verify.enabled);
+        assert_eq!(cfg.explore.agent_cmd, vec!["sh".to_string(), "stub.sh".to_string()]);
+        assert_eq!(cfg.explore.sandbox_cmd.len(), 4);
+        assert_eq!(cfg.verify.agent_cmd, vec!["vibe".to_string(), "-p".to_string()]);
+        assert_eq!(cfg.workflow_root, "runs");
+        // unknown keys still errors
+        assert!(parse_config(r#"{"explore": {"enabled": true, "bogus": 1}}"#).is_err());
+        assert!(parse_config(r#"{"verify": {"queries_file": "x"}}"#).is_err()); // queries_file is explore-only
+        assert!(parse_config(r#"{"workflow_root": 3}"#).is_err());
+        assert!(parse_config(r#"{"explore": {"agent_cmd": "sh"}}"#).is_err());
     }
 
     #[test]

@@ -6,31 +6,38 @@
 //! `latest-sync.json` (kb-scan-sync/1), which is surfaced separately.
 //! Missing shards are tolerated: merge whatever exists.
 
-use crate::config::FeedToggles;
+use crate::config::Config;
 use crate::date;
 use crate::json::{self, Value};
 use std::path::{Path, PathBuf};
 
-/// All known shard names; "sync" first, then the feeds in canonical order.
-pub const SHARD_NAMES: &[&str] = &["sync", "kev", "osv", "github", "epss", "nvd"];
+/// All known shard names; "sync" first, then feeds, then explore/verify.
+pub const SHARD_NAMES: &[&str] = &["sync", "kev", "osv", "github", "epss", "nvd", "explore", "verify"];
 
-/// The shard list for a config: ["sync"] + each enabled feed.
-pub fn shard_list(feeds: &FeedToggles) -> Vec<String> {
+/// The shard list for a config: ["sync"] + each enabled feed + explore/verify
+/// when enabled.
+pub fn shard_list(cfg: &Config) -> Vec<String> {
     let mut v = vec!["sync".to_string()];
-    if feeds.kev {
+    if cfg.feeds.kev {
         v.push("kev".to_string());
     }
-    if feeds.osv {
+    if cfg.feeds.osv {
         v.push("osv".to_string());
     }
-    if feeds.github {
+    if cfg.feeds.github {
         v.push("github".to_string());
     }
-    if feeds.epss {
+    if cfg.feeds.epss {
         v.push("epss".to_string());
     }
-    if feeds.nvd {
+    if cfg.feeds.nvd {
         v.push("nvd".to_string());
+    }
+    if cfg.explore.enabled {
+        v.push("explore".to_string());
+    }
+    if cfg.verify.enabled {
+        v.push("verify".to_string());
     }
     v
 }
@@ -46,10 +53,35 @@ pub struct Merged {
     pub sync: Option<Value>,
 }
 
+/// Sort key: (effective tier, id). Unverified leads never outrank tier 1/2
+/// feed-confirmed findings — they sort below everything else.
 fn finding_sort_key(f: &Value) -> (u64, String) {
     let tier = f.get("tier").and_then(|t| t.as_u64()).unwrap_or(u64::MAX);
+    let status = f.get("status").and_then(|s| s.as_str()).unwrap_or("");
+    let effective = if status == "unverified" { 5 } else { tier };
     let id = f.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
-    (tier, id)
+    (effective, id)
+}
+
+/// A lead becomes a finding with source "explore" and a verdict status.
+fn lead_to_finding(lead: &Value, verdict_status: Option<&str>) -> Value {
+    let status = verdict_status.unwrap_or("unverified");
+    let mut m = vec![
+        ("tier".to_string(), Value::num("4")),
+        ("kind".to_string(), Value::str("lead")),
+        ("id".to_string(), Value::str(lead.get("id").and_then(|x| x.as_str()).unwrap_or(""))),
+        ("summary".to_string(), Value::str(lead.get("summary").and_then(|x| x.as_str()).unwrap_or(""))),
+        ("source".to_string(), Value::str("explore")),
+        ("status".to_string(), Value::str(status)),
+        ("playbook".to_string(), Value::str("advisory-fleet-triage")),
+    ];
+    if let Some(q) = lead.get("query").and_then(|x| x.as_str()) {
+        m.push(("query".to_string(), Value::str(q)));
+    }
+    if let Some(urls) = lead.get("urls") {
+        m.push(("urls".to_string(), urls.clone()));
+    }
+    Value::obj(m)
 }
 
 /// Merge every `<out_dir>/shards/*/latest.json` into one report.
@@ -139,6 +171,66 @@ pub fn merge_out_dir(out_dir: &Path) -> Result<Merged, String> {
         }
     }
 
+    // explore shard: fold leads as findings with source "explore"
+    let mut verdicts: Vec<(String, String)> = Vec::new();
+    let verdicts_path = shards_dir.join("verify").join("verdicts.json");
+    if let Ok(text) = std::fs::read_to_string(&verdicts_path) {
+        if let Ok(v) = json::parse(&text) {
+            if let Some(arr) = v.get("verdicts").and_then(|x| x.as_array()) {
+                for vd in arr {
+                    let id = vd.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    let st = vd.get("status").and_then(|x| x.as_str()).unwrap_or("unconfirmed").to_string();
+                    if !id.is_empty() {
+                        verdicts.push((id, st));
+                    }
+                }
+            }
+            let generated_at = v.get("generated_at").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            shard_infos.push(Value::obj(vec![
+                ("name".to_string(), Value::str("verify")),
+                ("status".to_string(), Value::str("ok")),
+                ("generated_at".to_string(), Value::str(generated_at)),
+            ]));
+            saw_any = true;
+        }
+    }
+    let leads_path = shards_dir.join("explore").join("leads.json");
+    let mut lead_count = 0usize;
+    if let Ok(text) = std::fs::read_to_string(&leads_path) {
+        if let Ok(v) = json::parse(&text) {
+            if let Some(arr) = v.get("leads").and_then(|x| x.as_array()) {
+                for lead in arr {
+                    let id = lead.get("id").and_then(|x| x.as_str()).unwrap_or("");
+                    let verdict = verdicts.iter().find(|(vid, _)| vid == id).map(|(_, s)| s.as_str());
+                    findings.push(lead_to_finding(lead, verdict));
+                    lead_count += 1;
+                }
+            }
+            let generated_at = v.get("generated_at").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            shard_infos.push(Value::obj(vec![
+                ("name".to_string(), Value::str("explore")),
+                ("status".to_string(), Value::str("ok")),
+                ("generated_at".to_string(), Value::str(generated_at)),
+            ]));
+            saw_any = true;
+        }
+    }
+    sum_findings += lead_count as u64;
+
+    // apply verifier verdicts to feed findings too (verify queue includes tier<=2)
+    for f in findings.iter_mut() {
+        if f.get("source").and_then(|s| s.as_str()) != Some("explore") {
+            let id = f.get("id").and_then(|x| x.as_str()).unwrap_or("");
+            if let Some((_, st)) = verdicts.iter().find(|(vid, _)| vid == id) {
+                // insert/replace status member
+                if let Value::Obj(members) = f {
+                    members.retain(|(k, _)| k != "status");
+                    members.push(("status".to_string(), Value::str(st)));
+                }
+            }
+        }
+    }
+
     if !saw_any {
         return Err(format!("no shard reports found under {:?}", shards_dir));
     }
@@ -194,12 +286,18 @@ mod tests {
 
     #[test]
     fn shard_list_order_and_toggles() {
-        let all = FeedToggles { kev: true, osv: true, github: true, epss: true, nvd: true };
-        assert_eq!(shard_list(&all), vec!["sync", "kev", "osv", "github", "epss", "nvd"]);
-        let none = FeedToggles { kev: false, osv: false, github: false, epss: false, nvd: false };
-        assert_eq!(shard_list(&none), vec!["sync"]);
+        use crate::config::{ExploreCfg, VerifyCfg};
+        let mut cfg = Config::default();
+        cfg.feeds = crate::config::FeedToggles { kev: true, osv: true, github: true, epss: true, nvd: true };
+        assert_eq!(shard_list(&cfg), vec!["sync", "kev", "osv", "github", "epss", "nvd"]);
+        cfg.explore = ExploreCfg { enabled: true, ..Default::default() };
+        cfg.verify = VerifyCfg { enabled: true, ..Default::default() };
+        assert_eq!(shard_list(&cfg), vec!["sync", "kev", "osv", "github", "epss", "nvd", "explore", "verify"]);
+        let none = Config::default();
+        assert_eq!(shard_list(&none), vec!["sync", "kev", "osv", "github", "epss"]); // feeds default on, explore/verify off
         assert!(is_valid_shard("sync"));
-        assert!(is_valid_shard("kev"));
+        assert!(is_valid_shard("explore"));
+        assert!(is_valid_shard("verify"));
         assert!(!is_valid_shard("bogus"));
     }
 
@@ -252,6 +350,50 @@ mod tests {
         let s = m.sync.expect("sync report");
         assert_eq!(s.get("schema").and_then(|v| v.as_str()), Some("kb-scan-sync/1"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn merge_folds_leads_and_applies_verdicts() {
+        let dir = fixture_dir("c");
+        write_shard(
+            &dir,
+            "kev",
+            r#"{"schema":"kb-scan-report/1","generated_at":"2026-11-21T00:00:00Z",
+                "feeds":[{"name":"kev","status":"ok"}],
+                "findings":[{"tier":2,"id":"CVE-2","summary":"kev hit"}],
+                "stats":{"packages":1,"cves":1,"findings":1,"errors":[]}}"#,
+        );
+        let edir = dir.join("shards").join("explore");
+        std::fs::create_dir_all(&edir).unwrap();
+        std::fs::write(
+            edir.join("leads.json"),
+            r#"{"schema":"kb-scan-leads/1","generated_at":"t","leads":[
+                {"id":"lead-u","summary":"unverified lead","status":"unverified","query":"q1","urls":[]},
+                {"id":"lead-c","summary":"confirmed lead","status":"unverified","query":"q2","urls":[]}]}"#,
+        )
+        .unwrap();
+        let vdir = dir.join("shards").join("verify");
+        std::fs::create_dir_all(&vdir).unwrap();
+        std::fs::write(
+            vdir.join("verdicts.json"),
+            r#"{"schema":"kb-scan-verdicts/1","generated_at":"t","verdicts":[
+                {"id":"lead-c","status":"confirmed","sources":[]},
+                {"id":"CVE-2","status":"confirmed","sources":[]}]}"#,
+        )
+        .unwrap();
+        let m = merge_out_dir(&dir).unwrap();
+        let findings = m.report.get("findings").and_then(|v| v.as_array()).unwrap();
+        let order: Vec<(&str, &str)> = findings
+            .iter()
+            .map(|f| (f.get("id").and_then(|i| i.as_str()).unwrap(), f.get("status").and_then(|s| s.as_str()).unwrap_or("-")))
+            .collect();
+        // tier-2 feed finding first (verdict applied), confirmed lead next, unverified lead last
+        assert_eq!(order, vec![("CVE-2", "confirmed"), ("lead-c", "confirmed"), ("lead-u", "unverified")]);
+        let lead_u = findings.iter().find(|f| f.get("id").and_then(|i| i.as_str()) == Some("lead-u")).unwrap();
+        assert_eq!(lead_u.get("source").and_then(|s| s.as_str()), Some("explore"));
+        let stats = m.report.get("stats").unwrap();
+        assert_eq!(stats.get("findings").and_then(|v| v.as_u64()), Some(3));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

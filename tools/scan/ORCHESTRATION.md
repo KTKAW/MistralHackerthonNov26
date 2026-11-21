@@ -208,3 +208,54 @@ layer on top (pattern proven by the team on 21 Nov 2026: parallel activities via
 - Rate limits: GitHub ADP is 60 req/h unauthenticated — shards already degrade to
   `rate-limited`; verifiers should treat OSV/NVD/EPSS as primary and GitHub as
   best-effort. One attempt per activity, no retries on half-verified findings.
+
+## Explorer / verifier orchestration (the brain stays in Rust)
+
+The swarm gains two shard types, orchestrated by the Rust supervisor. The Rust
+engine only schedules, queues, spawns and merges — it never reads web content.
+The LLM agents it spawns are the untrusted-input readers, so **each spawned agent
+runs in its own sandbox** (one sandbox per agent): bwrap locally, scratch container
+in deploy; read-only FS except the agent's own result file; scrubbed env, no
+secrets; network limited to the research hosts. The engine itself stays
+minimal-privilege host-side.
+
+Config additions (strict schema, unknown keys still an error):
+
+```json
+{
+  "explore": {
+    "enabled": true, "max_per_cycle": 5, "queries_file": "tools/scan/explore-queries.txt",
+    "agent_cmd": ["vibe", "-p"], "agent_prompt_file": "tools/scan/explore-prompt.md",
+    "sandbox_cmd": ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
+  },
+  "verify": { "enabled": true, "max_per_cycle": 20,
+    "agent_cmd": ["vibe", "-p"], "agent_prompt_file": "tools/scan/verify-prompt.md" },
+  "workflow_root": "runs"
+}
+```
+
+Behaviour per cycle:
+
+1. `explore` shard rotates the query list (round-robin + jittered pick of extra
+   terms) and writes `out/explore/queue-<ts>.json` — one task per line:
+   `{id, query, sources_hint}`. It then spawns up to `max_per_cycle` agent
+   processes: `agent_cmd + [prompt with task substituted] `, each under
+   `sandbox_cmd` (if set) with cwd = a per-agent dir under `out/explore/agents/<id>/`,
+   env scrubbed, timeout from `http_timeout_secs` × 4. Each agent must write its
+   findings to `results.json` in its own dir (schema `kb-scan-leads/1`:
+   `{leads: [{query, summary, urls: [{url, read}], status: "unverified"}]}`).
+2. `verify` shard builds `out/verify/queue.json` from findings with tier ≤ 2 plus
+   all unverified leads, and spawns verifier agents the same way; each writes
+   `verdicts.json` (`{verdicts: [{id, status: confirmed|partial|unconfirmed, sources: [{url, read}]}]}`).
+3. `merge` folds everything into `kb-scan-report/1`: explorer leads appear as
+   findings with `source: "explore"` and `status: "unverified"` until a verifier
+   verdict arrives, which sets `status` and keeps tier ordering intact
+   (unverified never outranks tier 1/2 feed-confirmed findings).
+4. The supervisor additionally writes the triage report to
+   `<workflow_root>/<run_id or "latest">/triage.json` (atomic) — that file is the
+   handoff into the main `le_chonk_run` workflow (step 0 reads it; gate rules
+   unchanged; human approves).
+
+Tests must use a **stub agent command** (a shell script that writes canned
+`results.json`/`verdicts.json`), never a real model call, and never a real secret.
+Live demo with `vibe -p` is documented but not run in CI.

@@ -1,0 +1,9 @@
+# kb-scan explore queries — one per line, optional ` | sources_hint` suffix.
+# Rotated round-robin by the explore shard; one jittered extra term per cycle
+# is appended from the engine's built-in list.
+# Known sources: NVD, OSV, vendor security blogs, watchlist publishers (watchlist.md).
+new vulnerabilities in products on our watchlist | NVD, vendor security blogs, watchlist publishers
+newly published CVEs with CVSS 9.0+ this month | NVD, OSV
+malicious packages recently published | OSV (MAL- ids), GitHub Advisory Database
+vendor security advisories this week | vendor security blogs, MSRC, Apple, Android, Chrome release notes
+ransomware group claims victim | UK NCSC, vendor security blogs, NVD

@@ -30,6 +30,8 @@ pub struct SwarmArgs {
     pub pretty: bool,
     pub force: bool,
     pub stop_file: Option<String>,
+    /// Workflow run id for the triage.json handoff; "latest" if not given.
+    pub run_id: Option<String>,
 }
 
 struct ChildProc {
@@ -70,9 +72,18 @@ fn backoff_secs(fail_count: u32) -> u64 {
     (1u64 << shift).min(BACKOFF_CAP_SECS)
 }
 
-/// Write the merged outputs atomically: latest.json, latest-sync.json and
-/// timestamped copies under reports/.
-fn write_merged(out_dir: &Path, reports_dir: &Path, merged: &Merged, pretty: bool) -> Result<(), String> {
+/// Write the merged outputs atomically: latest.json, latest-sync.json,
+/// timestamped copies under reports/, and the triage handoff at
+/// <workflow_root>/<run>/triage.json (the file the main workflow's step 0
+/// reads).
+fn write_merged(
+    out_dir: &Path,
+    reports_dir: &Path,
+    merged: &Merged,
+    pretty: bool,
+    workflow_root: &str,
+    run_id: &str,
+) -> Result<(), String> {
     let stamp = date::file_stamp(date::now_secs());
     let report_json = json::serialize(&merged.report, pretty);
     atomic_write(&out_dir.join("latest.json"), &report_json)?;
@@ -82,6 +93,9 @@ fn write_merged(out_dir: &Path, reports_dir: &Path, merged: &Merged, pretty: boo
         atomic_write(&out_dir.join("latest-sync.json"), &sync_json)?;
         atomic_write(&reports_dir.join(format!("{}-sync.json", stamp)), &sync_json)?;
     }
+    let run_dir = Path::new(workflow_root).join(run_id);
+    std::fs::create_dir_all(&run_dir).map_err(|e| format!("cannot create {:?}: {}", run_dir, e))?;
+    atomic_write(&run_dir.join("triage.json"), &report_json)?;
     Ok(())
 }
 
@@ -123,7 +137,8 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
         Err(code) => return code,
     };
 
-    let shards = merge::shard_list(&cfg.feeds);
+    let shards = merge::shard_list(&cfg);
+    let run_id = args.run_id.clone().unwrap_or_else(|| "latest".to_string());
     eprintln!("kb-scan: swarm starting with shards {:?} (interval {}s, max-runs {})", shards, cfg.interval_secs, cfg.max_runs);
 
     let exe = match std::env::current_exe() {
@@ -177,11 +192,11 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
         // merge after each cycle
         match merge::merge_out_dir(&out_dir) {
             Ok(merged) => {
-                if let Err(e) = write_merged(&out_dir, &reports_dir, &merged, args.pretty) {
+                if let Err(e) = write_merged(&out_dir, &reports_dir, &merged, args.pretty, &cfg.workflow_root, &run_id) {
                     eprintln!("kb-scan: merge write failed: {}", e);
                     any_errors = true;
                 } else {
-                    eprintln!("kb-scan: cycle {} merged {} shard report(s) -> latest.json", cycle, merged.report.get("shards").and_then(|s| s.as_array()).map(|a| a.len()).unwrap_or(0));
+                    eprintln!("kb-scan: cycle {} merged {} shard report(s) -> latest.json + {}/{}/triage.json", cycle, merged.report.get("shards").and_then(|s| s.as_array()).map(|a| a.len()).unwrap_or(0), cfg.workflow_root, run_id);
                 }
             }
             Err(e) => {
@@ -237,7 +252,7 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
     // final merge so latest.json reflects the last state of every shard
     match merge::merge_out_dir(&out_dir) {
         Ok(merged) => {
-            if let Err(e) = write_merged(&out_dir, &reports_dir, &merged, args.pretty) {
+            if let Err(e) = write_merged(&out_dir, &reports_dir, &merged, args.pretty, &cfg.workflow_root, &run_id) {
                 eprintln!("kb-scan: final merge write failed: {}", e);
                 any_errors = true;
             }

@@ -31,8 +31,60 @@ kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max
 kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
                [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME]
 kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
-               [--force] [--stop-file FILE]
+               [--force] [--stop-file FILE] [--run-id ID]
 kb-scan merge  [--out-dir DIR] [--out FILE] [--pretty]
+```
+
+### Explorer / verifier orchestration (the brain stays in Rust)
+
+The swarm can also run two LLM-agent shard types; the Rust engine only
+schedules, queues, spawns and merges — it never reads web content itself.
+Enable them in the config (strict schema, unknown keys are an error):
+
+```json
+{
+  "workflow_root": "runs",
+  "explore": {
+    "enabled": true, "max_per_cycle": 5, "queries_file": "tools/scan/explore-queries.txt",
+    "agent_cmd": ["vibe", "-p"], "agent_prompt_file": "tools/scan/explore-prompt.md",
+    "sandbox_cmd": ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
+  },
+  "verify": { "enabled": true, "max_per_cycle": 20,
+    "agent_cmd": ["vibe", "-p"], "agent_prompt_file": "tools/scan/verify-prompt.md" }
+}
+```
+
+- **explore shard** (`watch --shard explore`): each cycle rotates
+  `explore-queries.txt` (round-robin + one jittered extra term per cycle from
+  a small built-in list), writes `<out>/explore/queue-<ts>.json` (one
+  `{id, query, sources_hint}` task per line), then spawns up to `max_per_cycle`
+  agent processes — `agent_cmd + [prompt with task substituted]`, argv array
+  only, never a shell, each under `sandbox_cmd` if set, cwd a fresh
+  per-agent dir `<out>/explore/agents/<id>/`, env scrubbed (no inherited
+  secrets), hard timeout `http_timeout_secs × 4` then kill. Each agent writes
+  `results.json` (schema `kb-scan-leads/1`, leads `status: "unverified"`);
+  leads accumulate in `<out>/leads.json`.
+- **verify shard** (`watch --shard verify`): builds `<out>/verify/queue.json`
+  from findings with tier ≤ 2 (in the supervisor's merged `latest.json`) plus
+  all unverified leads, spawns verifier agents the same way; each writes
+  `verdicts.json` (`{verdicts: [{id, status: confirmed|partial|unconfirmed,
+  sources: [{url, read}]}]}`), accumulated in `<out>/verdicts.json`.
+- **merge** folds leads into `kb-scan-report/1` as findings with
+  `source: "explore"` and `status` from the verifier verdict (default
+  `unverified`); tier ordering is preserved and unverified leads never outrank
+  tier 1/2 feed-confirmed findings. Schema stays pinned at `kb-scan-report/1`.
+- **Handoff:** the supervisor additionally writes the merged triage report
+  atomically to `<workflow_root>/<run>/triage.json` (`run` = `--run-id` or
+  `latest`) — that file is what the main Le Chonk workflow's step 0 reads.
+  Gate rules are unchanged; a human approves. The engine never sends anything.
+
+Tests and live demos use a **stub agent** (`tests/stub-agent.sh` writes canned
+`results.json`/`verdicts.json`) — never a real model call, never a real
+secret. Example:
+
+```bash
+kb-scan swarm --config tools/scan/out/orch-test-config.json \
+  --interval 5 --max-runs 2 --out-dir tools/scan/out/orch-test
 ```
 
 - `sync` polls git (`fetch --prune`, `for-each-ref`, `rev-list --left-right

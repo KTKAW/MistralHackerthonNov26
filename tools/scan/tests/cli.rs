@@ -229,6 +229,167 @@ fn swarm_lock_conflict_exits_4() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+fn stub_cmd() -> String {
+    format!("{}/tests/stub-agent.sh", env!("CARGO_MANIFEST_DIR"))
+}
+
+#[test]
+fn explore_shard_with_stub_agent() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it10-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let qfile = dir.join("queries.txt");
+    std::fs::write(&qfile, "NVD CVE-2026 | NVD\nOSV malware npm\n").unwrap();
+    let cfg_path = dir.join("config.json");
+    let inv_path = dir.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
+             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 2, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \
+             \"agent_prompt_file\": {:?}}}}}",
+            inv_path.to_str().unwrap(),
+            qfile.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+        ),
+    )
+    .unwrap();
+    let out = dir.join("shard");
+    let mut cmd = Command::new(BIN);
+    cmd.args(["watch", "--config", cfg_path.to_str().unwrap(), "--out-dir", out.to_str().unwrap(), "--shard", "explore", "--max-runs", "1", "--interval", "1"]);
+    cmd.env("KB_SCAN_TEST_SECRET", "fake-secret-value");
+    let o = cmd.output().unwrap();
+    let code = o.status.code().unwrap_or(-1);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
+    // queue file written (one JSON task per line)
+    let qdir = out.join("explore");
+    let queues: Vec<_> = std::fs::read_dir(&qdir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).filter(|f| f.starts_with("queue-")).collect();
+    assert_eq!(queues.len(), 1, "queues: {:?}", queues);
+    let qtext = std::fs::read_to_string(qdir.join(&queues[0])).unwrap();
+    assert_eq!(qtext.lines().count(), 2);
+    assert!(qtext.contains("\"query\"") && qtext.contains("\"sources_hint\""));
+    // one agent dir per task, each with results.json and a scrubbed env
+    let agents: Vec<_> = std::fs::read_dir(qdir.join("agents")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(agents.len(), 2);
+    for a in &agents {
+        assert!(qdir.join("agents").join(a).join("results.json").exists(), "agent {} missing results.json", a);
+        let envtxt = std::fs::read_to_string(qdir.join("agents").join(a).join("env.txt")).unwrap();
+        assert_eq!(envtxt, "", "secret leaked into agent env");
+    }
+    // accumulated leads.json with kb-scan-leads/1 schema
+    let leads = std::fs::read_to_string(out.join("leads.json")).unwrap();
+    assert!(leads.contains("kb-scan-leads/1"));
+    assert!(leads.contains("unverified"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn verify_shard_with_stub_agent() {
+    let sup = std::env::temp_dir().join(format!("kb-scan-it11-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&sup);
+    let vdir = sup.join("shards").join("verify");
+    let edir = sup.join("shards").join("explore");
+    std::fs::create_dir_all(&vdir).unwrap();
+    std::fs::create_dir_all(&edir).unwrap();
+    // supervisor merged report with a tier-2 finding
+    std::fs::write(
+        sup.join("latest.json"),
+        r#"{"schema":"kb-scan-report/1","findings":[{"tier":2,"id":"CVE-2026-1","summary":"kev hit","source":"kev"}],"stats":{"packages":0,"cves":0,"findings":1,"errors":[]}}"#,
+    )
+    .unwrap();
+    // explore leads: one unverified, one already verified
+    std::fs::write(
+        edir.join("leads.json"),
+        r#"{"schema":"kb-scan-leads/1","leads":[{"id":"lead-x","summary":"l","status":"unverified","query":"q","urls":[]},{"id":"lead-y","summary":"l2","status":"confirmed","query":"q2","urls":[]}]}"#,
+    )
+    .unwrap();
+    let cfg_path = sup.join("config.json");
+    let inv_path = sup.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
+             \"verify\": {{\"enabled\": true, \"max_per_cycle\": 10, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+            inv_path.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/verify-prompt.md", env!("CARGO_MANIFEST_DIR")),
+        ),
+    )
+    .unwrap();
+    let o = Command::new(BIN)
+        .args(["watch", "--config", cfg_path.to_str().unwrap(), "--out-dir", vdir.to_str().unwrap(), "--shard", "verify", "--max-runs", "1", "--interval", "1"])
+        .output()
+        .unwrap();
+    let code = o.status.code().unwrap_or(-1);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
+    // queue.json contains the tier<=2 finding and the unverified lead only
+    let queue = std::fs::read_to_string(vdir.join("verify").join("queue.json")).unwrap();
+    assert!(queue.contains("CVE-2026-1") && queue.contains("lead-x") && !queue.contains("lead-y"));
+    // per-agent dirs each with verdicts.json; accumulated verdicts.json
+    let agents: Vec<_> = std::fs::read_dir(vdir.join("verify").join("agents")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(agents.len(), 2);
+    for a in &agents {
+        assert!(vdir.join("verify").join("agents").join(a).join("verdicts.json").exists());
+    }
+    let verdicts = std::fs::read_to_string(vdir.join("verdicts.json")).unwrap();
+    assert!(verdicts.contains("kb-scan-verdicts/1") && verdicts.contains("confirmed"));
+    let _ = std::fs::remove_dir_all(&sup);
+}
+
+#[test]
+fn swarm_writes_triage_handoff() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it12-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let qfile = dir.join("queries.txt");
+    std::fs::write(&qfile, "NVD CVE-2026 | NVD\n").unwrap();
+    let cfg_path = dir.join("config.json");
+    let inv_path = dir.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"workflow_root\": {:?}, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
+             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}, \
+             \"verify\": {{\"enabled\": true, \"max_per_cycle\": 5, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+            inv_path.to_str().unwrap(),
+            dir.join("runs").to_str().unwrap(),
+            qfile.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            stub_cmd(),
+            format!("{}/verify-prompt.md", env!("CARGO_MANIFEST_DIR")),
+        ),
+    )
+    .unwrap();
+    let out = dir.join("out");
+    let o = Command::new(BIN)
+        .args([
+            "swarm", "--config", cfg_path.to_str().unwrap(), "--out-dir", out.to_str().unwrap(),
+            "--interval", "1", "--max-runs", "1", "--run-id", "testrun",
+        ])
+        .output()
+        .unwrap();
+    let code = o.status.code().unwrap_or(-1);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
+    // shard dirs for explore+verify (+sync) exist
+    assert!(out.join("shards").join("explore").join("leads.json").exists());
+    assert!(out.join("shards").join("verify").join("verdicts.json").exists());
+    assert!(out.join("shards").join("sync").join("latest-sync.json").exists());
+    // merged outputs + triage handoff
+    let latest = std::fs::read_to_string(out.join("latest.json")).unwrap();
+    assert!(latest.contains("\"swarm\":true"));
+    assert!(latest.contains("\"source\":\"explore\"") || latest.contains("\"source\": \"explore\"") || latest.contains("explore"));
+    let triage = dir.join("runs").join("testrun").join("triage.json");
+    assert!(triage.exists(), "triage.json handoff missing");
+    let t = std::fs::read_to_string(&triage).unwrap();
+    assert!(t.contains("kb-scan-report/1"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn stop_file_ends_watch() {
     let dir = std::env::temp_dir().join(format!("kb-scan-it4-{}", std::process::id()));
