@@ -21,7 +21,7 @@ The sources for the legal dates are in [PROJECT.md](PROJECT.md). They are law-fi
 
 ```mermaid
 flowchart LR
-    A["Advisory<br/>its text, or just a CVE id"] --> B["Read the advisory<br/>one call to Large 4<br/>four facts, checked"]
+    A["Advisory<br/>its text, or just a CVE id"] --> B["Read the advisory<br/>one call to Large 4<br/>five facts, checked"]
     B --> C1["Agent<br/>repository 1"]
     B --> C2["Agent<br/>repository 2"]
     B --> C3["Agent<br/>repository n"]
@@ -35,7 +35,7 @@ flowchart LR
     R --> H["A person approves<br/>within 24 hours"]
 ```
 
-1. **Read the advisory.** One call to `mistral-large-4-0` extracts four facts: the identifier, the package, the affected versions and the flawed function. Given only an identifier, the tool looks the record up at OSV first.
+1. **Read the advisory.** One call to `mistral-large-4-0` extracts five facts: the identifier, the package, the affected versions, the fixed version and the flawed function. Given only an identifier, the tool looks the record up at OSV first.
 2. **Fan out.** One agent per repository, all at once. Each gets a fresh copy of the repository.
 3. **Decide and prove.** If the flaw can be reached, the agent writes a test that sends a harmless forged or malformed input through the service's own entry point. If it cannot, the agent says why and cites the code path.
 4. **Fix.** The agent upgrades or patches. The proof test must now pass, and so must the tests that were already there.
@@ -56,7 +56,7 @@ Every repository ends on one of four tiles:
 The agent's answer is a claim. The gate, in [orchestrator/gate.py](orchestrator/gate.py), is what turns it into a tile, and it can only make a verdict more cautious: its one move is to downgrade a claim to "needs a human".
 
 - **It builds both versions itself**, offline, from pinned packages. It never uses the agent's environment, so editing the installed library gains an agent nothing.
-- **The proof must fail on the vulnerable version and pass on the fixed one.** The whole test suite must pass after the fix.
+- **The proof must fail on the vulnerable version and pass on the fixed one.** No test of the repository may pass before the fix and fail after it.
 - **No earlier test may be changed or deleted**, and the number of tests may not drop. Proof tests go in new files.
 - **A claim of "not affected" must leave the repository untouched** and cite a code path.
 - **A rejected claim is never shown as a result.** The tile says which rule failed.
@@ -67,7 +67,7 @@ The agent's answer is a claim. The gate, in [orchestrator/gate.py](orchestrator/
 
 Everything the tool reads is treated as untrusted:
 
-- **The advisory.** The reader's answer is held to four short strings with fixed patterns, and each fact must appear in the advisory's own text. An advisory with an instruction added for "automated triage" produced the same four facts.
+- **The advisory.** The reader's answer is held to five short strings with fixed patterns, and the identifier, the package, the fixed version and the function must appear in the advisory's own text. An advisory with an instruction added for "automated triage" produced the same facts.
 - **The agent's words.** A pull request's title, commit and body are built only from checked values. Nothing under `.github/` may change. It is a draft and nothing merges it.
 - **The report.** It is written from gated verdicts by plain code. The tool never submits anything: a person does.
 
@@ -89,7 +89,7 @@ Two apps carry the argument:
 
 ## A three-minute demo
 
-1. Type `CVE-2026-96760` and start the run. The four facts appear, with a link to the OSV record they came from.
+1. Type `CVE-2026-96760` and start the run. The five facts appear, with a link to the OSV record they came from.
 2. Eleven cards fill in live: which phase each repository is in, then its tile.
 3. Open `billing-api`, then "Under the hood". **Gate checks** shows the proof exiting 1 before the fix and 0 after. **What it changed** shows the forged token and the one-line fix.
 4. Open `session-service` and read why there is no reachable path. Each step of the path links to that line on GitHub.
@@ -228,7 +228,9 @@ uv run pytest
 | [orchestrator/stub_agent.py](orchestrator/stub_agent.py) | The stand-in for the per-repository agent |
 | [orchestrator/fleet.json](orchestrator/fleet.json) | The eleven apps, pinned by commit |
 | [web/](web/) | The page: the grid, the live activity stream and the per-repository inspector |
-| [schema/verdict.schema.json](schema/verdict.schema.json) | The verdict file every agent writes |
+| [docs/contract.md](docs/contract.md) | The run contract: what a run leaves on disk, and who owns each file |
+| [src/vulnerability_agent/](src/vulnerability_agent/) | The contract as code: schemas for `run.json`, `advisory.json`, `verdict.json` and `state.json`, and helpers |
+| [orchestrator/record.py](orchestrator/record.py) | Joins a repository's `state.json` and `verdict.json` into the record the report and the page read |
 
 ## Read more
 
