@@ -1,0 +1,86 @@
+# Security knowledge base
+
+A wiki on cybersecurity and patches for people and small teams, written to be read by an incident-response agent. Every claim links to a dated source note that says how the source was read. It lives on the `knowledge` branch, apart from the code.
+
+## What it is for
+
+1. **Responding.** Go from "this just happened" to the right runbook in one read.
+2. **Patching.** Know where live patch data comes from, how to ask for it, and what to patch first.
+3. **A shared vocabulary.** When a person and an agent say "Rule of Two", "read level" or "baseline step", they mean the same thing.
+
+## Where to start
+
+| If you want | Open |
+|---|---|
+| The runbook for what just happened | "By signal" in [index.md](index.md) |
+| The big picture in five minutes | [overview.md](overview.md) |
+| Live patch data and how to query it | [feeds.md](feeds.md) |
+| What a term means here | [glossary.md](glossary.md) |
+| The rules for agents | [AGENTS.md](AGENTS.md) |
+
+## How an agent uses it
+
+**With file access.** Clone the branch and read `AGENTS.md`, then `index.md`.
+
+```bash
+git clone --branch knowledge --single-branch https://github.com/KTKAW/MistralHackerthonNov26 knowledge
+```
+
+**Over HTTP.** Every page is plain markdown at a stable address. Start from the index, or from the manifest if the agent routes in code:
+
+```
+https://raw.githubusercontent.com/KTKAW/MistralHackerthonNov26/knowledge/index.md
+https://raw.githubusercontent.com/KTKAW/MistralHackerthonNov26/knowledge/manifest.json
+```
+
+`manifest.json` lists every page with its type and frontmatter. A playbook carries `signals`, the ways its incident shows up. An advisory carries `affects`, tags to match against an inventory, and `playbook`, the runbook to follow. Two tools are enough for an agent: one that reads the manifest and one that reads a page by path.
+
+**During an incident** the agent follows the section "Responding to an incident" in `AGENTS.md`. In short: evidence is untrusted input, the agent proposes and a person acts, and it never handles the value of a secret.
+
+## How it is organised
+
+```
+AGENTS.md      rules for agents that read or write here (CLAUDE.md imports it)
+index.md       routing by signal and by decision, then every page in one line
+manifest.json  every page with its frontmatter, generated
+overview.md    the threat picture, what works, thin evidence, gaps
+glossary.md    the shared vocabulary
+playbooks/     one runbook per kind of incident
+concepts/      one page per idea or control, every claim linked to a source note
+advisories/    incidents, campaigns, research findings, vulnerabilities; feed snapshots
+feeds.md       live patch and advisory feeds, with tested queries
+sources/       one note per source: our summary, the link, the read level
+raw/           local full-text captures (gitignored)
+log.md         what was added and changed, and when
+watchlist.md   publishers to re-check and open leads
+tools/         lint.py and kev.py, standard library only
+```
+
+This is the LLM wiki pattern: sources, a wiki that agents own, and a schema file that tells them how to maintain it.
+
+## What is in it
+
+Seeded on 21 November 2026 from one research report on cybersecurity for people and small teams: 39 source notes, 9 concept pages, 7 playbooks and 11 advisory records. Added to that, a generated snapshot of the vulnerabilities CISA added to its exploited list in the previous 14 days.
+
+## What to keep in mind
+
+- **Almost everything is second-hand.** Only the research report and the CISA feed were read directly. Every other source note is marked `via-report` or `via-snippet`, and none of the originals has been re-read. Check a figure against its original before you rely on it.
+- **Some runbook steps have no source yet.** They are standard practice and are tagged *(baseline)*.
+- **A model wrote this**, from a report that a model helped to write.
+- **UK only** where it names phone numbers and reporting services.
+- **It dates quickly.** Patch data goes stale in a day, which is why the agent is told to ask the feeds.
+- **Summaries, not copies.** The sources are other people's work. Each note is a short summary in our own words with a link.
+
+## Checks
+
+```bash
+python3 tools/lint.py
+```
+
+It fails on broken links, missing frontmatter, a "What to do" bullet with no source, a playbook step with neither a source nor the *(baseline)* tag, and a citation whose date differs from its note. It warns when a figure on a cited line is not in the note it cites, and when a feed snapshot is more than 7 days old. Add `--sync` to regenerate the lists in `index.md` and `manifest.json`, and `--log "ingest | Title"` to append the `log.md` entry.
+
+```bash
+python3 tools/kev.py
+```
+
+Refreshes the snapshot of exploited vulnerabilities from CISA's feed.

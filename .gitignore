@@ -1,0 +1,8 @@
+# Full-text captures and private working documents stay local.
+raw/*
+!raw/README.md
+
+# Local editor and OS state
+.obsidian/
+.DS_Store
+__pycache__/

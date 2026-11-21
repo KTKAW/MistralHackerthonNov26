@@ -1,0 +1,840 @@
+{
+ "generated_by": "python3 tools/lint.py --sync",
+ "pages": [
+  {
+   "path": "advisories/2026-02-clawhub-malicious-skills.md",
+   "type": "advisory",
+   "title": "Malicious skills on OpenClaw's ClawHub marketplace",
+   "date": "2026-02",
+   "kind": "incident",
+   "exploited": "in-the-wild",
+   "fix_status": "unknown",
+   "affects": [
+    "agent-skills",
+    "openclaw",
+    "clawhub",
+    "macos"
+   ],
+   "ids": [],
+   "playbook": "agent-hijack",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-02-clinejection.md",
+   "type": "advisory",
+   "title": "Clinejection: a GitHub issue title compromises a coding agent",
+   "date": "2026-02",
+   "kind": "incident",
+   "exploited": "in-the-wild",
+   "fix_status": "unknown",
+   "affects": [
+    "coding-agents",
+    "cline",
+    "github-issues",
+    "github-actions"
+   ],
+   "ids": [],
+   "playbook": "agent-hijack",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-02-cloned-oura-mcp-server.md",
+   "type": "advisory",
+   "title": "Cloned Oura Ring MCP server delivers malware",
+   "date": "2026-02",
+   "kind": "incident",
+   "exploited": "in-the-wild",
+   "fix_status": "unknown",
+   "affects": [
+    "mcp",
+    "oura-ring-mcp-server"
+   ],
+   "ids": [],
+   "playbook": "agent-hijack",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-04-comment-and-control.md",
+   "type": "advisory",
+   "title": "Comment and Control: repository text steers CI review agents",
+   "date": "2026-04",
+   "kind": "research",
+   "exploited": "demonstrated",
+   "fix_status": "unknown",
+   "affects": [
+    "github-actions",
+    "ci-secrets",
+    "claude-code-security-review",
+    "gemini-cli-action",
+    "copilot-agent"
+   ],
+   "ids": [],
+   "playbook": "agent-hijack",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-04-mcp-stdio-flaw.md",
+   "type": "advisory",
+   "title": "MCP STDIO design flaw",
+   "date": "2026-04",
+   "kind": "vulnerability",
+   "exploited": "unknown",
+   "fix_status": "unknown",
+   "affects": [
+    "mcp",
+    "mcp-stdio-servers"
+   ],
+   "ids": [],
+   "playbook": "agent-hijack",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-06-bioshocking-ai-browsers.md",
+   "type": "advisory",
+   "title": "BioShocking: six AI browsers leak data in tests",
+   "date": "2026-06",
+   "kind": "research",
+   "exploited": "demonstrated",
+   "fix_status": "unknown",
+   "affects": [
+    "ai-browsers",
+    "chatgpt-atlas",
+    "comet",
+    "claude-browser-extension"
+   ],
+   "ids": [],
+   "playbook": "agent-hijack",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-08-npm-worm.md",
+   "type": "advisory",
+   "title": "August 2026 npm worm",
+   "date": "2026-08",
+   "kind": "incident",
+   "exploited": "in-the-wild",
+   "fix_status": "unknown",
+   "affects": [
+    "npm",
+    "npm-tokens",
+    "github-tokens",
+    "cloud-tokens",
+    "claude-code-config",
+    "vscode-config"
+   ],
+   "ids": [],
+   "playbook": "malicious-dependency",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-08-zenity-ai-browser-hijacks.md",
+   "type": "advisory",
+   "title": "Zenity hijacks five AI browsers",
+   "date": "2026-08",
+   "kind": "research",
+   "exploited": "demonstrated",
+   "fix_status": "unknown",
+   "affects": [
+    "ai-browsers",
+    "claude-in-chrome",
+    "gemini-in-chrome",
+    "comet",
+    "chatgpt-atlas",
+    "copilot-edge"
+   ],
+   "ids": [],
+   "playbook": "agent-hijack",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-09-clickfix-ai-tool-lures.md",
+   "type": "advisory",
+   "title": "ClickFix lures dressed as AI-tool install guides",
+   "date": "2026-09",
+   "kind": "campaign",
+   "exploited": "in-the-wild",
+   "fix_status": "unknown",
+   "affects": [
+    "terminal",
+    "claude-code",
+    "notebooklm",
+    "search-ads",
+    "shared-ai-chats"
+   ],
+   "ids": [],
+   "playbook": "pasted-command",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-09-device-code-phishing-cloud-email.md",
+   "type": "advisory",
+   "title": "Device-code phishing against cloud email",
+   "date": "2026-09",
+   "kind": "campaign",
+   "exploited": "in-the-wild",
+   "fix_status": "unknown",
+   "affects": [
+    "cloud-email",
+    "device-code-sign-in",
+    "identity-provider"
+   ],
+   "ids": [],
+   "playbook": "account-phish",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/2026-09-stolen-ai-keys-and-fake-resellers.md",
+   "type": "advisory",
+   "title": "Stolen AI keys, bulk token theft and fake Claude resellers",
+   "date": "2026-09",
+   "kind": "campaign",
+   "exploited": "in-the-wild",
+   "fix_status": "unknown",
+   "affects": [
+    "ai-api-keys",
+    "azure-ad-tokens",
+    "claude-accounts",
+    "android-apps",
+    "hardcoded-secrets"
+   ],
+   "ids": [],
+   "playbook": "leaked-secret",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "advisories/kev-recent.md",
+   "type": "feed-snapshot",
+   "title": "CISA KEV: entries added in the last 14 days",
+   "feed": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+   "catalog_version": "2026.11.20",
+   "fetched": "2026-11-21",
+   "window_days": "14",
+   "entries": "21",
+   "generated": "true"
+  },
+  {
+   "path": "concepts/agent-containment.md",
+   "type": "concept",
+   "title": "Agent containment",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/ai-assisted-defence.md",
+   "type": "concept",
+   "title": "AI-assisted defence",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/clickfix.md",
+   "type": "concept",
+   "title": "ClickFix and pasted commands",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/patching-and-exploit-speed.md",
+   "type": "concept",
+   "title": "Patching and exploit speed",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/phishing-resistant-sign-in.md",
+   "type": "concept",
+   "title": "Phishing-resistant sign-in",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "settled"
+  },
+  {
+   "path": "concepts/prompt-injection-and-rule-of-two.md",
+   "type": "concept",
+   "title": "Prompt injection and the Rule of Two",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/secrets-and-ai-keys.md",
+   "type": "concept",
+   "title": "Secrets and AI keys",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/social-engineering-and-verification.md",
+   "type": "concept",
+   "title": "Social engineering and verification",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/supply-chain-and-dependency-cooldown.md",
+   "type": "concept",
+   "title": "Supply chain and dependency cooldown",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "feeds.md",
+   "type": "reference",
+   "title": "Feeds: where patch and advisory data lives",
+   "checked": "2026-11-21"
+  },
+  {
+   "path": "glossary.md",
+   "type": "reference",
+   "title": "Glossary"
+  },
+  {
+   "path": "index.md",
+   "type": "reference",
+   "title": "Index"
+  },
+  {
+   "path": "overview.md",
+   "type": "reference",
+   "title": "Overview: the threat picture in late 2026",
+   "updated": "2026-11-21"
+  },
+  {
+   "path": "playbooks/account-phish.md",
+   "type": "playbook",
+   "title": "An account may be taken over",
+   "signals": [
+    "typed a password or code into a page now in doubt",
+    "approved a sign-in prompt or device code not started by the user",
+    "sign-ins or forwarding rules or sent messages nobody recognises",
+    "locked out of an account"
+   ],
+   "severity": "high",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "playbooks/agent-hijack.md",
+   "type": "playbook",
+   "title": "An agent did something it was not asked to do",
+   "signals": [
+    "agent took an action nobody asked for",
+    "agent output contains instructions aimed at the user",
+    "skill or MCP server is malicious or cloned",
+    "content the agent read held hidden instructions",
+    "browser agent acted inside a logged-in account"
+   ],
+   "severity": "high",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "playbooks/exploited-vulnerability.md",
+   "type": "playbook",
+   "title": "An exploited vulnerability touches your stack",
+   "signals": [
+    "advisory names a product or package we run",
+    "CVE added to the CISA KEV catalog",
+    "vendor ships an emergency patch",
+    "dependency audit reports a critical vulnerability"
+   ],
+   "severity": "high",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "playbooks/leaked-secret.md",
+   "type": "playbook",
+   "title": "A key or token is exposed",
+   "signals": [
+    "API key committed to a repository",
+    "token pasted into a chat or an issue or a log",
+    "secret found by a scan",
+    ".env file shared or published",
+    "unexpected spend on an AI or cloud account"
+   ],
+   "severity": "high",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "playbooks/malicious-dependency.md",
+   "type": "playbook",
+   "title": "A malicious package was installed",
+   "signals": [
+    "advisory names a package version we installed",
+    "registry or feed flags a package as malware",
+    "package ran something unexpected at install",
+    "unknown versions of our own package were published"
+   ],
+   "severity": "critical",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "playbooks/pasted-command.md",
+   "type": "playbook",
+   "title": "Someone pasted a command from a web page",
+   "signals": [
+    "pasted a command into a terminal or Run box",
+    "fake CAPTCHA or fake error page",
+    "install guide from an ad or a shared AI chat",
+    "ran a one-line installer from a website"
+   ],
+   "severity": "high",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "playbooks/payment-or-voice-scam.md",
+   "type": "playbook",
+   "title": "A call or message asks for money",
+   "signals": [
+    "caller says they are the bank or the police or a relative in trouble",
+    "request to move money to a safe account",
+    "supplier sends new bank details",
+    "urgent payment request by phone or text",
+    "money already sent to a scammer"
+   ],
+   "severity": "high",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "sources/anthropic-glasswing-update.md",
+   "type": "source",
+   "title": "Project Glasswing: an initial update",
+   "publisher": "Anthropic",
+   "url": "https://www.anthropic.com/research/glasswing-initial-update",
+   "published": "2026-05-22",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/anthropic-security-review.md",
+   "type": "source",
+   "title": "Automate security reviews with Claude Code",
+   "publisher": "Anthropic",
+   "url": "https://www.anthropic.com/news/automate-security-reviews-with-claude-code",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/anthropic-threat-intelligence-2026-09.md",
+   "type": "source",
+   "title": "Detecting and countering misuse of AI: September 2026",
+   "publisher": "Anthropic",
+   "url": "https://anthropic.com/threat-intelligence-report-september-2026",
+   "published": "2026-09",
+   "ingested": "2026-11-21",
+   "kind": "report",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/apple-call-screening.md",
+   "type": "source",
+   "title": "Apple on protections against scams and fraud",
+   "publisher": "Apple",
+   "url": "https://www.apple.com/sg/newsroom/2025/10/apple-helps-safeguard-users-from-scams-and-fraud-while-protecting-personal-data/",
+   "published": "2025-10",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/bleepingcomputer-gemini-summaries.md",
+   "type": "source",
+   "title": "BleepingComputer on hidden text that hijacks Gemini email summaries",
+   "publisher": "BleepingComputer",
+   "url": "https://www.bleepingcomputer.com/news/security/google-gemini-flaw-hijacks-email-summaries-for-phishing/",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/cifas-protective-registration.md",
+   "type": "source",
+   "title": "Cifas Protective Registration",
+   "publisher": "Cifas",
+   "url": "https://www.cifas.org.uk/pr",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "docs",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/cisa-kev.md",
+   "type": "source",
+   "title": "CISA Known Exploited Vulnerabilities Catalog",
+   "publisher": "US Cybersecurity and Infrastructure Security Agency",
+   "url": "https://www.cisa.gov/known-exploited-vulnerabilities-catalog",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "feed",
+   "read": "partial"
+  },
+  {
+   "path": "sources/claude-code-sandboxing-docs.md",
+   "type": "source",
+   "title": "Claude Code documentation: sandboxing",
+   "publisher": "Anthropic",
+   "url": "https://docs.claude.com/en/docs/claude-code/sandboxing",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "docs",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/csa-clinejection-note.md",
+   "type": "source",
+   "title": "CSA research note on prompt injection through GitHub issues (Clinejection)",
+   "publisher": "Cloud Security Alliance",
+   "url": "https://labs.cloudsecurityalliance.org/research/csa-research-note-claude-code-github-action-prompt-injection/",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/csa-mcp-security-note.md",
+   "type": "source",
+   "title": "CSA research note: MCP security crisis",
+   "publisher": "Cloud Security Alliance",
+   "url": "https://labs.cloudsecurityalliance.org/research/csa-research-note-mcp-security-crisis-20260504/",
+   "published": "2026-05-04",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/dsit-cyber-security-breaches-survey-2025-26.md",
+   "type": "source",
+   "title": "Cyber Security Breaches Survey 2025/26",
+   "publisher": "UK Department for Science, Innovation and Technology",
+   "url": "https://www.gov.uk/government/statistics/cyber-security-breaches-survey-20252026/cyber-security-breaches-survey-20252026",
+   "published": "2026-04-30",
+   "ingested": "2026-11-21",
+   "kind": "report",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/fido-passkey-index-2026.md",
+   "type": "source",
+   "title": "FIDO Alliance Passkey Index, October 2026",
+   "publisher": "FIDO Alliance",
+   "url": "https://fidoalliance.org/biometric-update-fido-alliance-counts-7-billion-passkeys-as-adoption-gains-momentum/",
+   "published": "2026-10",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/five-eyes-agentic-ai-guidance.md",
+   "type": "source",
+   "title": "Careful Adoption of Agentic AI Services: Five Eyes joint guidance",
+   "publisher": "Five Eyes cyber agencies, including the UK NCSC (link is The Register's coverage)",
+   "url": "https://www.theregister.com/a/5229103",
+   "published": "2026-04-30",
+   "ingested": "2026-11-21",
+   "kind": "guidance",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/fortune-voice-cloning-safe-word.md",
+   "type": "source",
+   "title": "Fortune on AI voice-cloning scams and safe words",
+   "publisher": "Fortune",
+   "url": "https://fortune.com/2026/10/24/ai-voice-cloning-scam-fake-kidnapping-safe-word/",
+   "published": "2026-10-24",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/google-android-scam-detection.md",
+   "type": "source",
+   "title": "Google on Android's scam protection",
+   "publisher": "Google",
+   "url": "https://blog.google/security/staying-one-step-ahead-strengthening-androids-lead-in-scam-protection/",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/govuk-report-fraud.md",
+   "type": "source",
+   "title": "GOV.UK: Report Fraud, the new service from City of London Police",
+   "publisher": "GOV.UK",
+   "url": "https://www.gov.uk/government/news/report-fraud-new-service-from-city-of-london-police",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/heiding-llm-phishing-study.md",
+   "type": "source",
+   "title": "Heiding et al.: a study of AI-written phishing and of models as phishing detectors",
+   "publisher": "arXiv",
+   "url": "https://arxiv.org/html/2412.00586v1",
+   "published": "2024-12",
+   "ingested": "2026-11-21",
+   "kind": "paper",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/helpnet-fbi-ai-complaints.md",
+   "type": "source",
+   "title": "Help Net Security on the AI section of the FBI's IC3 report",
+   "publisher": "Help Net Security",
+   "url": "https://www.helpnetsecurity.com/?p=365202",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/hiya-ai-voice-fraud.md",
+   "type": "source",
+   "title": "Hiya on AI voice fraud",
+   "publisher": "Hiya",
+   "url": "https://blog.hiya.com/ai-is-making-voice-fraud-worse-both-in-volume-and-in-targeting",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/microsoft-digital-defense-report-2026.md",
+   "type": "source",
+   "title": "Microsoft Digital Defense Report 2026, as reported by Help Net Security",
+   "publisher": "Help Net Security",
+   "url": "https://www.helpnetsecurity.com/2026/10/02/ai-cybersecurity-threats-microsoft-report/",
+   "published": "2026-10-02",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/moneyweek-159.md",
+   "type": "source",
+   "title": "MoneyWeek on the 159 anti-scam number",
+   "publisher": "MoneyWeek",
+   "url": "https://moneyweek.com/personal-finance/159-phone-number-stop-banking-scams",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/ncsc-cyber-action-toolkit.md",
+   "type": "source",
+   "title": "NCSC Cyber Action Toolkit",
+   "publisher": "UK National Cyber Security Centre",
+   "url": "https://www.ncsc.gov.uk/section/advice-guidance/self-employed-sole-traders",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "docs",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/notebookcheck-zenity-ai-browsers.md",
+   "type": "source",
+   "title": "Notebookcheck on Zenity's AI browser hijacks",
+   "publisher": "Notebookcheck",
+   "url": "https://www.notebookcheck.net/Claude-Gemini-Comet-five-AI-browsers-hijacked-by-a-single-email.1362568.0.html",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/owasp-agentic-top-10-2026.md",
+   "type": "source",
+   "title": "OWASP Top 10 for Agentic Applications 2026",
+   "publisher": "OWASP GenAI Security Project",
+   "url": "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications/",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "guidance",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/owasp-genai-exploit-roundup-2026-q2.md",
+   "type": "source",
+   "title": "GenAI and agentic AI exploit round-up, Q2 2026",
+   "publisher": "OWASP GenAI Security Project",
+   "url": "https://genai.owasp.org/2026/07/08/genai-and-agentic-ai-exploit-roundup-q2-2026/",
+   "published": "2026-07-08",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/push-security-state-of-clickfix.md",
+   "type": "source",
+   "title": "The state of ClickFix by detection data",
+   "publisher": "Push Security",
+   "url": "https://pushsecurity.com/blog/the-state-of-clickfix-by-detection-data",
+   "published": "2026-09-23",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/register-ai-phishing-click-rates.md",
+   "type": "source",
+   "title": "The Register on AI-written phishing in Microsoft's FY2025 report",
+   "publisher": "The Register",
+   "url": "https://www.theregister.com/2025/10/16/ai_makes_phishing_45x_more_effective",
+   "published": "2025-10-16",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/research-report-2026-11.md",
+   "type": "source",
+   "title": "Cybersecurity in late 2026: AI workflows for personal and small-team protection",
+   "publisher": "Team research report",
+   "url": "none",
+   "published": "2026-11-21",
+   "ingested": "2026-11-21",
+   "kind": "research-report",
+   "read": "full"
+  },
+  {
+   "path": "sources/sans-llm-email-classification.md",
+   "type": "source",
+   "title": "SANS: how LLMs classify suspicious email",
+   "publisher": "SANS",
+   "url": "https://www.sans.edu/cyber-research/how-many-llms-classify-suspicious-email",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "paper",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/securityweek-fbi-ic3-2025.md",
+   "type": "source",
+   "title": "SecurityWeek on the FBI's IC3 report for 2025",
+   "publisher": "SecurityWeek",
+   "url": "https://www.securityweek.com/fbi-cybercrime-losses-neared-21-billion-in-2025/amp/",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/securityweek-npm-worm-2026-08.md",
+   "type": "source",
+   "title": "SecurityWeek on the August 2026 npm worm",
+   "publisher": "SecurityWeek",
+   "url": "https://www.securityweek.com/over-400-npm-packages-infected-in-chaindrop-supply-chain-attack/amp/",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/socket-dependency-cooldown.md",
+   "type": "source",
+   "title": "Socket glossary: dependency cooldown",
+   "publisher": "Socket",
+   "url": "https://socket.dev/glossary/dependency-cooldown",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "docs",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/sophos-lethal-trifecta.md",
+   "type": "source",
+   "title": "Sophos: inside the lethal trifecta",
+   "publisher": "Sophos",
+   "url": "https://www.sophos.com/blog/inside-the-lethal-trifecta-blast-radius-reduction-in-ai-agent-deployments",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/techrepublic-bioshocking.md",
+   "type": "source",
+   "title": "TechRepublic on LayerX's BioShocking",
+   "publisher": "TechRepublic",
+   "url": "https://www.techrepublic.com/article/news-bioshocking-ai-browsers-leak-credentials/",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/uk-finance-annual-fraud-report-2026.md",
+   "type": "source",
+   "title": "UK Finance Annual Fraud Report 2026: press release",
+   "publisher": "UK Finance",
+   "url": "https://www.ukfinance.org.uk/news-and-insight/press-release/fraud-report-2026-press-release",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "report",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/unit42-openclaw-supply-chain.md",
+   "type": "source",
+   "title": "Unit 42 on supply-chain risk in OpenClaw's skill marketplace",
+   "publisher": "Palo Alto Networks Unit 42",
+   "url": "https://unit42.paloaltonetworks.com/openclaw-ai-supply-chain-risk/",
+   "published": "2026",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/upguard-mcp-incidents.md",
+   "type": "source",
+   "title": "UpGuard on MCP security incidents",
+   "publisher": "UpGuard",
+   "url": "https://www.upguard.com/blog/mcp-security-incidents",
+   "published": "undated",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  },
+  {
+   "path": "sources/verizon-dbir-2026.md",
+   "type": "source",
+   "title": "Verizon 2026 Data Breach Investigations Report: press release",
+   "publisher": "Verizon",
+   "url": "https://www.verizon.com/about/news/breach-industry-wide-dbir-finds",
+   "published": "2026-05-19",
+   "ingested": "2026-11-21",
+   "kind": "report",
+   "read": "via-report"
+  },
+  {
+   "path": "sources/willison-rule-of-two.md",
+   "type": "source",
+   "title": "Simon Willison on Meta's Agents Rule of Two",
+   "publisher": "Simon Willison's Weblog",
+   "url": "https://simonwillison.net/2025/Nov/2/new-prompt-injection-papers/",
+   "published": "2025-11-02",
+   "ingested": "2026-11-21",
+   "kind": "article",
+   "read": "via-snippet"
+  }
+ ]
+}
