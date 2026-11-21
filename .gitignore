@@ -1,18 +1,30 @@
+# secrets — NEVER commit
+.env
+vibe-home/
+*.pem
+*.key
+
 # Full-text captures and private working documents stay local.
 raw/*
 !raw/README.md
 
-# Local editor and OS state
-.obsidian/
-.DS_Store
-__pycache__/
+# run artifacts (Le Chonk incl. simulated; kb-scan engine)
+runs/
+tools/scan/runs/
 
 # kb-scan engine build and run output
 tools/scan/target/
 tools/scan/out/
 
-# kb-scan run artifacts
-tools/scan/runs/
+# offline packages (built locally per machine — see fleet/README.md)
+wheelhouse/
 
-# Le Chonk run artifacts (incl. simulated)
-runs/
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Local editor and OS state
+.obsidian/
+.DS_Store

@@ -1,0 +1,60 @@
+{
+  "note": "The demo fleet: eleven small services, each in its own repository. Five pin authlib 1.8.0 (CVE-2026-96760). Six were built on 21 November 2026 around three advisories published that month: tornado (CVE-2026-126347), soupsieve (CVE-2026-126193) and mail-parser (CVE-2026-129300). Each commit below was reviewed and tested on the old and the fixed version of its package. Fetch them with: uv run python -m orchestrator.fetch_fleet",
+  "apps": [
+    {
+      "name": "auth-gateway",
+      "url": "https://github.com/memlish/auth-gateway.git",
+      "commit": "65dac48d4d7d2305bfcdb97ee9a3c6ae97298484"
+    },
+    {
+      "name": "billing-api",
+      "url": "https://github.com/memlish/billing-api.git",
+      "commit": "ee9ea0d7b18db020eeeb783ef6edad62570fada2"
+    },
+    {
+      "name": "session-service",
+      "url": "https://github.com/memlish/session-service.git",
+      "commit": "f1022f7dfeeeb966fe2c5db1d3c73208b1b167e3"
+    },
+    {
+      "name": "token-signer",
+      "url": "https://github.com/memlish/token-signer.git",
+      "commit": "5b31a2b9a7a9f66f26243e89cff3b9e28d622d6c"
+    },
+    {
+      "name": "profile-api",
+      "url": "https://github.com/memlish/profile-api.git",
+      "commit": "f1005d6d1f38d46bd9c783504a264941baf7878b"
+    },
+    {
+      "name": "link-redirector",
+      "url": "https://github.com/memlish/link-redirector.git",
+      "commit": "045be60cadf0fa6c3afc0401fcd513c396c0c990"
+    },
+    {
+      "name": "docs-portal",
+      "url": "https://github.com/memlish/docs-portal.git",
+      "commit": "e5b751b6d2ce87383fecf98ae5a0e38d095fd8bc"
+    },
+    {
+      "name": "html-extractor",
+      "url": "https://github.com/memlish/html-extractor.git",
+      "commit": "0272a8dd34ee36d69e765b17fd2bd15876936119"
+    },
+    {
+      "name": "link-checker",
+      "url": "https://github.com/memlish/link-checker.git",
+      "commit": "ff621b293132eae69c5e54e4c3008263431d3fc2"
+    },
+    {
+      "name": "ticket-mailer",
+      "url": "https://github.com/memlish/ticket-mailer.git",
+      "commit": "d64ce67d5930bb2706afa2dbc4f3475aa183d3b3"
+    },
+    {
+      "name": "mail-intake",
+      "url": "https://github.com/memlish/mail-intake.git",
+      "commit": "0c9c6a4ed2794c063a23630ae3e3f33ce5ccd1e3"
+    }
+  ]
+}

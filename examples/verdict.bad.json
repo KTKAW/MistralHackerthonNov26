@@ -1,0 +1,5 @@
+{
+  "repo": "payments-api",
+  "verdict": "affected_fixed",
+  "proof": "tests/test_proof.py::test_forged_token_rejected"
+}
