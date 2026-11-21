@@ -26,3 +26,6 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-v --tb=short"
+markers = [
+    "integration: calls the real Mistral API (needs MISTRAL_API_KEY); skipped when unset",
+]

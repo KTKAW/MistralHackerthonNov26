@@ -315,7 +315,7 @@ def _create_wav_header(data_length: int, sample_rate: int = 16000, channels: int
     block_align = channels * (bits_per_sample // 8)
     
     header = struct.pack(
-        "<4sI4s4sIHHIHH4sI",
+        "<4sI4s4sIHHIIHH4sI",
         b"RIFF",
         data_length + 36,  # File size - 8
         b"WAVE",
@@ -370,7 +370,7 @@ def _create_wav_header(data_length: int, sample_rate: int = 16000, channels: int
     block_align = channels * (bits_per_sample // 8)
     
     header = struct.pack(
-        "<4sI4s4sIHHIHH4sI",
+        "<4sI4s4sIHHIIHH4sI",
         b"RIFF",
         data_length + 36,  # File size - 8
         b"WAVE",

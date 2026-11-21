@@ -63,7 +63,7 @@ class TestPostRuns:
 
     def test_start_run_requires_advisory_text(self, client):
         r = client.post("/runs", json={})
-        assert r.status_code == 422  # validation error
+        assert r.status_code == 400  # post_run explicitly rejects a run with no advisory input
 
     def test_start_run_local_mode_creates_run_dir(self, client):
         """In local mode, POST /runs creates runs/<run_id>/run.json and spawns a subprocess."""

@@ -11,27 +11,28 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 
+@pytest.fixture
+def sample_wav():
+    """Create a simple test WAV file (module-level so all classes can use it)."""
+    import struct
+    # Create a minimal valid WAV file with silence
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        # WAV header
+        f.write(struct.pack("<4sI4s4sIHHIIHH4sI",
+            b"RIFF", 36, b"WAVE", b"fmt ", 16, 1, 1, 16000, 32000, 2, 16, b"data", 0))
+        # No audio data (silence)
+        return f.name
+
+
 class TestVoxtralTranscribe:
     """Test API-based transcription."""
-    
+
     @pytest.fixture
     def mock_api_key(self):
         """Set a mock API key for testing."""
         with patch.dict(os.environ, {"MISTRAL_API_KEY": "test-key-123"}):
             yield
-    
-    @pytest.fixture
-    def sample_wav(self):
-        """Create a simple test WAV file."""
-        import struct
-        # Create a minimal valid WAV file with silence
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            # WAV header
-            f.write(struct.pack("<4sI4s4sIHHIHH4sI",
-                b"RIFF", 36, b"WAVE", b"fmt ", 16, 1, 1, 16000, 32000, 2, 16, b"data", 0))
-            # No audio data (silence)
-            return f.name
-    
+
     def test_import_module(self):
         """Test that voxtral module can be imported."""
         import voxtral
@@ -100,7 +101,7 @@ class TestWebAppVoxtral:
         # This test just verifies the flag exists in the module
         # Actual availability depends on installed packages
         from web import app
-        assert hasattr(app, "VOXTRAL_AVAILABLE") is False  # It's a module-level variable
+        assert isinstance(app.VOXTRAL_AVAILABLE, bool)  # module-level availability flag
 
 
 class TestVoxtralEndpoints:
