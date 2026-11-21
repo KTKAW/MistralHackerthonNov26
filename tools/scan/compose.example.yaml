@@ -1,0 +1,41 @@
+# Example deployment for kb-scan — see tools/scan/containerisation.md.
+#
+# Build the image from the crate directory first:
+#   docker build -t kb-scan:latest -f tools/scan/Dockerfile tools/scan
+# then:
+#   docker compose -f tools/scan/compose.example.yaml up -d
+#
+# The image is FROM scratch with only the static /kb-scan binary and no shell;
+# the engine's ENTRYPOINT is ["/kb-scan"], so `command:` below appends arguments.
+
+services:
+  kb-scan:
+    image: kb-scan:latest
+    build:
+      context: .
+      dockerfile: tools/scan/Dockerfile
+    # Scratch image + read-only rootfs: nothing writable except the out dir.
+    read_only: true
+    # Drop every Linux capability; no new privileges from setuid binaries.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Non-root (nobody:nogroup), matching USER 65534:65534 in the Dockerfile.
+    user: "65534:65534"
+    # Resource limits for the continuous watch loop.
+    mem_limit: 256m
+    cpus: "0.50"
+    pids_limit: 64
+    # Reports and the single-instance lock file go to the mounted out dir.
+    volumes:
+      - ./tools/scan/out:/out:rw
+    # Continuous loop: one sync+scan cycle per hour, reports under /out/reports.
+    command: ["watch", "--interval", "3600", "--out-dir", "/out"]
+    restart: unless-stopped
+    # NOTE: egress from this container must be allowlisted at the network layer
+    # (firewall / egress proxy / Kubernetes NetworkPolicy) to exactly the hosts
+    # in the engine's compiled-in allowlist, port 443 only:
+    #   www.cisa.gov  api.osv.dev  api.github.com  services.nvd.nist.gov  api.first.org
+    # (see feeds.md and tools/scan/containerisation.md). Compose itself has no
+    # egress-allowlist primitive; enforce it on the surrounding network.

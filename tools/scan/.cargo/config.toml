@@ -1,0 +1,8 @@
+# This machine has no cc/gcc and no libc dev files, so every build must target
+# x86_64-unknown-linux-musl and link with the toolchain's rust-lld.
+# The resulting binary is a static PIE with no dynamic loader.
+[build]
+target = "x86_64-unknown-linux-musl"
+
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"

@@ -1,0 +1,18 @@
+[package]
+name = "kb-scan"
+version = "0.1.0"
+edition = "2021"
+description = "Continuous host-side sync/scan engine for the security knowledge base. Zero dependencies, static musl, forbid(unsafe_code)."
+license = "MIT"
+publish = false
+
+# Zero external crates is a security requirement (see ORCHESTRATION.md):
+# there is no dependency supply chain to attack. Do not add any.
+[dependencies]
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

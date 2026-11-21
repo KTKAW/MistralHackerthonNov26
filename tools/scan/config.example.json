@@ -1,0 +1,13 @@
+{
+  "inventory": "tools/scan/inventory.json",
+  "interval_secs": 3600,
+  "max_runs": 0,
+  "out_dir": "tools/scan/out",
+  "git_remote": "origin",
+  "http_timeout_secs": 60,
+  "max_body_bytes": 8388608,
+  "epss_threshold": 0.5,
+  "kev_recent_days": 30,
+  "feeds": { "kev": true, "osv": true, "github": true, "epss": true, "nvd": false },
+  "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "KB_SCAN_IN_SANDBOX", "1", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc/ssl", "/etc/ssl", "--ro-bind", "{etc_hosts}", "/etc/hosts", "--ro-bind", "{etc_resolv}", "/etc/resolv.conf", "--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "{repo}", "{repo}", "--bind", "{out}", "{out}", "--chdir", "{repo}"]
+}

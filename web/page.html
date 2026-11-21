@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Le Chonk · 24-hour vulnerability response</title>
+<style>
+  :root {
+    --bg: #f4f3ef; --surface: #ffffff; --surface-2: #f8f7f3; --ink: #17181c; --muted: #696d78; --line: #e2e0d8;
+    --accent: #dd5226; --accent-ink: #ffffff;
+    --fixed: #1c7a4c; --fixed-bg: #e6f4ec; --clear: #2c5c9f; --clear-bg: #e7eef9;
+    --proven: #9a5b00; --proven-bg: #fbf0db; --human: #b23329; --human-bg: #fbe9e7;
+    --live: #6347c9; --live-bg: #eeeafb;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(20, 20, 30, .05), 0 6px 20px rgba(20, 20, 30, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101216; --surface: #181b21; --surface-2: #1e2229; --ink: #eceef2; --muted: #9399a6; --line: #2b3039;
+      --accent: #f0683b; --accent-ink: #14110f;
+      --fixed: #57c98e; --fixed-bg: #15291f; --clear: #7fb0f2; --clear-bg: #172334;
+      --proven: #e5b05c; --proven-bg: #2c2414; --human: #f08377; --human-bg: #2f1b19;
+      --live: #a996f5; --live-bg: #221d38;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+  h1, h2, h3, p { margin: 0; }
+  a { color: inherit; }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--muted); }
+  .icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---------- frame */
+  .top { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 5; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 34px; height: 34px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 800; letter-spacing: -.5px; }
+  .brand h1 { font-size: 16px; letter-spacing: -.2px; }
+  .brand p { font-size: 12px; color: var(--muted); }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+  select.badge { cursor: pointer; max-width: 280px; }
+  main { max-width: 1320px; margin: 0 auto; padding: 20px 24px 60px; display: grid; gap: 16px; }
+  .row { display: grid; gap: 16px; }
+  .row.two { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+  @media (max-width: 900px) { .row.two { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) {
+    .top { padding: 12px 14px; flex-wrap: wrap; }
+    .top-right { margin-left: 0; width: 100%; justify-content: flex-start; }
+    select.badge { max-width: 100%; }
+    main { padding: 14px 14px 40px; }
+    .notice { width: calc(100% - 28px); }
+    .clock { font-size: 44px; }
+    .kv { grid-template-columns: 1fr; }
+    .ev, .tl { grid-template-columns: 52px minmax(0, 1fr); }
+    .ev .src, .tl .src { display: none; }
+  }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); min-width: 0; }
+  .panel h2 { font-size: 13px; letter-spacing: .02em; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .panel h2 .hint { font-weight: 400; color: var(--muted); }
+  .notice { margin: 16px auto 0; width: calc(100% - 48px); max-width: 1272px; border: 1px solid var(--human); background: var(--human-bg); color: var(--human); border-radius: 12px; padding: 10px 14px; font-size: 13px; }
+
+  /* ---------- advisory and clock */
+  textarea { width: 100%; min-height: 96px; resize: vertical; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface-2); font-family: var(--mono); font-size: 12.5px; }
+  textarea:focus, input:focus, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  button { border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 7px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.quiet { border-color: transparent; background: transparent; color: var(--muted); padding: 5px 8px; }
+  button.quiet:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); border-color: transparent; }
+  .error { color: var(--human); font-size: 13px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .fact { border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; background: var(--surface-2); }
+  .fact span { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .fact b { font-family: var(--mono); font-size: 12.5px; font-weight: 600; word-break: break-all; }
+  .clock-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
+  .pill.live { background: var(--live-bg); border-color: transparent; color: var(--live); }
+  .pill.good { background: var(--fixed-bg); border-color: transparent; color: var(--fixed); }
+  .pill.bad { background: var(--human-bg); border-color: transparent; color: var(--human); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .live .dot { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  .spin { animation: spin 1.1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .live .dot, .spin { animation: none; } }
+  .clock { font: 700 56px/1.05 var(--mono); letter-spacing: -2px; margin: 10px 0 8px; font-variant-numeric: tabular-nums; }
+  .clock.idle { color: var(--muted); }
+  .bar { height: 6px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); }
+  .clock-note { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+
+  /* ---------- pipeline */
+  .pipeline { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; padding: 14px 18px; }
+  @media (max-width: 900px) { .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 12px; } }
+  .step { display: flex; gap: 10px; align-items: flex-start; padding-right: 10px; color: var(--muted); }
+  .step .bubble { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; flex: none; background: var(--surface); font-size: 12px; font-weight: 700; }
+  .step b { display: block; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .step small { display: block; font-size: 11.5px; line-height: 1.3; }
+  .step.done b { color: var(--ink); }
+  .step.done .bubble { background: var(--fixed-bg); border-color: transparent; color: var(--fixed); }
+  .step.active b { color: var(--live); } .step.active .bubble { background: var(--live-bg); border-color: var(--live); color: var(--live); }
+  .step.failed b { color: var(--human); } .step.failed .bubble { background: var(--human-bg); border-color: transparent; color: var(--human); }
+  .under { grid-column: 1 / -1; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12px; color: var(--muted); display: flex; gap: 6px 18px; flex-wrap: wrap; }
+  .under b { font-family: var(--mono); font-weight: 500; color: var(--ink); }
+
+  /* ---------- grid */
+  .summary { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-height: 26px; }
+  .v-affected_fixed { --tone: var(--fixed); --tone-bg: var(--fixed-bg); }
+  .v-not_affected { --tone: var(--clear); --tone-bg: var(--clear-bg); }
+  .v-affected_proven { --tone: var(--proven); --tone-bg: var(--proven-bg); }
+  .v-needs_human { --tone: var(--human); --tone-bg: var(--human-bg); }
+  .v-live { --tone: var(--live); --tone-bg: var(--live-bg); }
+  .v-queued { --tone: var(--muted); --tone-bg: var(--surface-2); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: var(--tone-bg); color: var(--tone); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr)); gap: 14px; margin-top: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; border-top: 3px solid var(--tone); min-width: 0; }
+  .card-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 0; }
+  .avatar { width: 32px; height: 32px; border-radius: 9px; background: var(--tone-bg); color: var(--tone); display: grid; place-items: center; font-weight: 700; font-size: 12px; letter-spacing: .3px; flex: none; }
+  .card-head h3 { font: 600 14px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .links { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+  .link { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 7px; border: 1px solid var(--line); text-decoration: none; font-size: 11.5px; color: var(--muted); background: var(--surface-2); }
+  .link:hover { color: var(--ink); border-color: var(--muted); }
+  .link .icon { width: 13px; height: 13px; }
+  .card-body { padding: 10px 14px 12px; display: grid; gap: 9px; flex: 1; align-content: start; }
+  .state { display: flex; align-items: center; gap: 7px; font-weight: 700; color: var(--tone); }
+  .reason { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 2px; }
+  .code-line { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+  .phases { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+  .phase { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+  .phase .icon { width: 12px; height: 12px; }
+  .phase.on { border-color: var(--live); color: var(--live); background: var(--live-bg); }
+  .phase.off { opacity: .55; }
+  .phase.ok { border-color: transparent; color: var(--fixed); background: var(--fixed-bg); }
+  .phases .sep { width: 12px; height: 1px; background: var(--line); }
+  .live-line { font-size: 12.5px; color: var(--muted); border-left: 2px solid var(--live); padding-left: 8px; min-height: 36px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  details summary { cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; display: flex; align-items: center; gap: 6px; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "▸"; font-size: 10px; }
+  details[open] summary::before { content: "▾"; }
+  .path { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; counter-reset: step; }
+  .path li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; font-size: 12px; counter-increment: step; }
+  .path li::before { content: counter(step); width: 16px; height: 16px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; font-size: 10px; color: var(--muted); }
+  .path a, .path .file { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+  .path a { color: var(--clear); text-decoration: none; } .path a:hover { text-decoration: underline; }
+  .path .note { display: block; color: var(--muted); }
+  .pull { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 12.5px;
+    background: var(--fixed-bg); color: var(--fixed); border: 1px solid transparent; justify-self: start; }
+  .pull:hover { border-color: var(--fixed); }
+  .pull .icon { width: 14px; height: 14px; }
+  .card-foot { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); background: var(--surface-2); }
+  .card-foot button { margin-left: auto; font-size: 12px; padding: 4px 9px; }
+
+  /* ---------- report and activity */
+  pre { margin: 0; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .report { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); max-height: 520px; overflow: auto; }
+  input[type="text"] { border: 1px solid var(--line); border-radius: 9px; padding: 7px 11px; background: var(--surface-2); width: 170px; }
+  .filters { display: flex; gap: 4px; margin-left: auto; }
+  .filters button { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; font-weight: 400; }
+  .filters button.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .feed { height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 4px 0; }
+  .ev { display: grid; grid-template-columns: 58px 100px minmax(0, 1fr); gap: 8px; padding: 3px 10px; font-size: 12px; align-items: baseline; }
+  .ev:hover { background: var(--surface); }
+  .ev time { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .src { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+  .src-orchestrator { color: var(--muted); } .src-gate { color: var(--clear); } .src-worker { color: var(--live); }
+  .ev .who { font-family: var(--mono); font-size: 11px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; margin-right: 6px; cursor: pointer; }
+  .k-fail .msg { color: var(--human); } .k-done .msg, .k-start .msg { font-weight: 600; }
+  .k-ok .msg::before { content: "✓ "; color: var(--fixed); } .k-fail .msg::before { content: "✕ "; }
+  .feed[data-filter="orchestrator"] .ev:not([data-source="orchestrator"]),
+  .feed[data-filter="gate"] .ev:not([data-source="gate"]),
+  .feed[data-filter="worker"] .ev:not([data-source="worker"]) { display: none; }
+  .empty { padding: 18px; text-align: center; color: var(--muted); font-size: 12.5px; }
+
+  /* ---------- under the hood */
+  .scrim { position: fixed; inset: 0; background: rgba(10, 10, 16, .38); z-index: 9; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--surface); border-left: 1px solid var(--line); z-index: 10; display: flex; flex-direction: column; box-shadow: -12px 0 40px rgba(0, 0, 0, .18); }
+  .drawer[hidden], .scrim[hidden] { display: none; }
+  .drawer-head { padding: 16px 18px 0; display: grid; gap: 10px; }
+  .drawer-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .drawer-title h2 { font: 700 17px var(--mono); margin: 0; }
+  .drawer-title .links { margin-left: 0; }
+  .drawer-title button { margin-left: auto; }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 -18px; padding: 0 18px; overflow-x: auto; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 8px 10px; color: var(--muted); white-space: nowrap; }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .drawer-body { padding: 16px 18px 28px; overflow: auto; flex: 1; display: grid; gap: 14px; align-content: start; }
+  .rule { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .rule:last-child { border-bottom: 0; }
+  .rule .mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; }
+  .rule.pass .mark { background: var(--fixed-bg); color: var(--fixed); } .rule.fail .mark { background: var(--human-bg); color: var(--human); }
+  .rule.soft .mark { background: var(--surface-2); color: var(--muted); }
+  .rule .mark .icon { width: 12px; height: 12px; stroke-width: 2.6; }
+  .rule b { font-weight: 600; } .rule small { display: block; color: var(--muted); font-family: var(--mono); font-size: 11.5px; word-break: break-word; margin-top: 2px; }
+  .box { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); overflow: hidden; min-width: 0; }
+  .box-head { padding: 6px 12px; border-bottom: 1px solid var(--line); font-size: 12px; display: flex; gap: 8px; align-items: center; }
+  .box-head .tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--muted); }
+  .box pre { padding: 10px 12px; max-height: 360px; overflow: auto; }
+  .diff-add { color: var(--fixed); background: var(--fixed-bg); display: block; } .diff-del { color: var(--human); background: var(--human-bg); display: block; }
+  .diff-meta { color: var(--muted); display: block; }
+  .callout { border-radius: 10px; padding: 10px 12px; font-size: 13px; background: var(--tone-bg); color: var(--tone); }
+  .kv { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 6px 12px; font-size: 13px; margin: 0; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; word-break: break-word; }
+  .tl { display: grid; grid-template-columns: 58px 100px minmax(0, 1fr); gap: 8px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed var(--line); align-items: baseline; }
+  .tl time { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  /* ---------- kb-scan feed watch */
+  .scan-tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--proven); background: var(--proven-bg); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+  .scan-note { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .scan-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; min-height: 24px; }
+  .scan-items { margin-top: 10px; display: grid; gap: 6px; max-height: 320px; overflow: auto; }
+  .scan-item { border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; background: var(--surface-2); display: grid; gap: 2px; min-width: 0; }
+  .scan-item .top-line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .tier-chip { font-family: var(--mono); font-size: 11px; font-weight: 700; border-radius: 5px; padding: 1px 6px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); flex: none; }
+  .scan-item .cve { font-family: var(--mono); font-size: 11.5px; font-weight: 600; word-break: break-all; }
+  .scan-item .pkg { font-family: var(--mono); font-size: 11px; color: var(--muted); word-break: break-all; }
+  .scan-item .title { font-size: 12px; }
+  .scan-item .src-line { font-size: 10.5px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+
+  /* ---------- voice */
+  button.listening { border-color: var(--live); color: var(--live); background: var(--live-bg); }
+  .voice-live { margin-top: 10px; font-size: 12.5px; color: var(--live); min-height: 18px; font-style: italic; }
+  .voice-log { margin-top: 8px; display: grid; gap: 8px; max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 8px 10px; }
+  .voice-entry { font-size: 12.5px; display: grid; gap: 1px; }
+  .voice-entry .who { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--muted); }
+  .voice-entry.answer .who { color: var(--live); }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5.5c0 4.4-2.9 8-7 9.5-4.1-1.5-7-5.1-7-9.5V6z"/></symbol>
+  <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-repo" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.2"/><circle cx="7" cy="18" r="2.2"/><circle cx="17" cy="8" r="2.2"/><path d="M7 8.2v7.6M17 10.2c0 3.2-4 3.2-10 4.6"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8M11 6H6v12h12v-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12 2.5-6H21"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4M4 16l8 4 8-4"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M15 5a4.5 4.5 0 0 0 4.2 6L10 20.2 6.8 17 16 7.8A4.5 4.5 0 0 0 15 5z"/></symbol>
+  <symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 8 8"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></symbol>
+  <symbol id="i-pull" viewBox="0 0 24 24"><circle cx="6.5" cy="6" r="2.2"/><circle cx="6.5" cy="18" r="2.2"/><circle cx="17.5" cy="18" r="2.2"/><path d="M6.5 8.2v7.600M17.500 15.800V10a3 3 0 0 0-3-3h-2.500M13.500 4.500 11 7l2.500 2.500"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand">
+    <div class="logo">LC</div>
+    <div><h1>Le Chonk</h1><p>24-hour vulnerability response</p></div>
+  </div>
+  <div class="top-right">
+    <select id="runs" class="badge" title="Open another run"></select>
+    <span class="badge" id="orchestrator">connecting</span>
+    <span class="badge" id="status" hidden></span>
+  </div>
+</header>
+
+<div class="notice" id="standin" hidden>
+  <strong>Stand-in worker.</strong> No agent is running. These verdicts are read from an answer file kept with the tool, to exercise the gate, the report and this page. Everything the gate does is real.
+</div>
+
+<main>
+  <section class="row two">
+    <div class="panel">
+      <h2>Security advisory <span class="hint">paste its text, or just its CVE or GHSA identifier</span></h2>
+      <textarea id="advisory" placeholder="Paste the advisory here. It has to name the package, the affected versions and the flawed function.&#10;&#10;Or type only its identifier, for example CVE-2026-96760, and it is looked up at OSV."></textarea>
+      <div class="actions">
+        <button class="primary" id="start"><svg class="icon"><use href="#i-play"/></svg>Start run</button>
+        <button class="quiet" id="demo" title="Fill in the advisory the demo fleet was built around">Fill in the demo advisory</button>
+        <span class="muted" id="fleet"></span>
+      </div>
+      <div class="callout v-needs_human" id="start-error" style="margin-top:10px" hidden></div>
+      <div class="facts" id="facts" hidden></div>
+    </div>
+    <div class="panel">
+      <div class="clock-head">
+        <span class="pill" id="stage"><span class="dot"></span><span id="stage-text">no run yet</span></span>
+        <span class="mono muted" id="run-id"></span>
+      </div>
+      <div class="clock idle" id="clock">24:00:00</div>
+      <div class="bar"><div id="bar-fill"></div></div>
+      <div class="clock-note" id="clock-note">The clock starts when a run starts.</div>
+    </div>
+  </section>
+
+  <section class="panel pipeline" id="pipeline"></section>
+
+  <section>
+    <div class="summary" id="summary"></div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="row two" id="scan-row" style="align-items:start">
+    <div class="panel">
+      <h2><svg class="icon"><use href="#i-layers"/></svg>Feed watch · kb-scan <span class="scan-tag">unverified feed data</span> <span class="hint" id="scan-latest-meta"></span></h2>
+      <p class="scan-note">The continuous poller's merged feed scan. Raw feed matches, not verdicts: nothing here has been through the gate.</p>
+      <div class="scan-meta" id="scan-latest-tiers"></div>
+      <div class="scan-items" id="scan-latest-items"><div class="empty">The scan engine has not run yet, or the backend is unreachable.</div></div>
+    </div>
+    <div class="panel" id="scan-run-panel" hidden>
+      <h2><svg class="icon"><use href="#i-pulse"/></svg>kb-scan triage for this run <span class="scan-tag">unverified feed data</span> <span class="hint" id="scan-run-meta"></span></h2>
+      <p class="scan-note">The engine's triage handoff for this run. Feed data only; the gate decides what a run may claim.</p>
+      <div class="scan-meta" id="scan-run-tiers"></div>
+      <div class="scan-items" id="scan-run-items"><div class="empty">No triage handoff for this run yet.</div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="voice-panel">
+    <h2><svg class="icon"><use href="#i-mic"/></svg>Voice
+      <span class="hint">GUI path: your browser's Web Speech API. The server-side Voxtral TTS brief stays the CLI path (<span class="mono">python3 tools/scan.py brief</span>, also served by <span class="mono">kb-scan serve</span> on 127.0.0.1:8787).</span>
+    </h2>
+    <div class="actions">
+      <button id="speak-brief" title="Fetch the ≤90-word kb-scan brief and speak it with the browser"><svg class="icon"><use href="#i-pulse"/></svg>Speak brief</button>
+      <button id="voice-ask" hidden title="Ask one question with the microphone"><svg class="icon"><use href="#i-mic"/></svg>Ask by voice</button>
+      <button id="voice-continuous" hidden title="Keep listening and answer follow-ups until stopped"><svg class="icon"><use href="#i-pulse"/></svg>Listen continuously</button>
+      <span class="muted" id="voice-status"></span>
+    </div>
+    <div class="voice-live" id="voice-live"></div>
+    <div class="voice-log" id="voice-log"><div class="empty">No voice exchanges yet.</div></div>
+    <p class="scan-note">Voice queries about “threat”, “scan”, “brief” or what is “new” refresh the feed watch and this run, then answer out loud; follow-ups like “and the top one?” or “what changed?” are answered from the rolling log and the current poll state. The microphone needs a secure context (HTTPS or localhost); browsers without SpeechRecognition keep the voice buttons hidden.</p>
+  </section>
+
+  <section class="row two" style="align-items:start">
+    <div class="panel">
+      <h2><svg class="icon"><use href="#i-doc"/></svg>Draft early warning <span class="hint">A person approves it here and submits it themselves. This tool sends nothing.</span></h2>
+      <div class="actions" style="margin-top:0">
+        <input type="text" id="approver" placeholder="Your name" maxlength="120">
+        <button class="primary" id="approve" disabled>Approve the draft</button>
+        <button id="toggle-report" disabled>Show the draft</button>
+        <span class="muted" id="approval-note"></span>
+      </div>
+      <div class="report" id="report-box" hidden><pre id="report"></pre></div>
+    </div>
+    <div class="panel">
+      <h2><svg class="icon"><use href="#i-pulse"/></svg>Activity <span class="hint" id="feed-count"></span>
+        <span class="filters" id="filters"></span>
+      </h2>
+      <div class="feed" id="feed" data-filter="all"><div class="empty" id="feed-empty">Every step of a run shows up here as it happens.</div></div>
+    </div>
+  </section>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Under the hood">
+  <div class="drawer-head">
+    <div class="drawer-title" id="drawer-title"></div>
+    <div class="tabs" id="tabs"></div>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<script>
+"use strict";
+// Everything that comes from a run is put on the page as text, through textContent, never as markup.
+const $ = (id) => document.getElementById(id);
+const SVG = "http://www.w3.org/2000/svg";
+const TITLES = { not_affected: "No reachable path found", affected_proven: "Affected and proven", affected_fixed: "Affected, proven and fixed", needs_human: "Needs a human" };
+const VERDICT_ICON = { not_affected: "i-shield", affected_proven: "i-search", affected_fixed: "i-wrench", needs_human: "i-person" };
+const STAGES = { starting: "starting", reading_advisory: "reading the advisory", triage: "agents at work", report: "writing the draft",
+  awaiting_approval: "waiting for a person", approved: "approved", expired: "expired: nobody approved", failed: "failed" };
+const SOURCES = { orchestrator: "orchestrator", gate: "gate", worker: "worker" };
+const TABS = [["timeline", "Timeline"], ["gate", "Gate checks"], ["changes", "What it changed"], ["claim", "The worker's claim"], ["raw", "Raw output"]];
+
+// The backend base URL: the ?api= query param, else window.KB_API_BASE, else same-origin.
+// Example: https://le-chonk.vercel.app/?api=https://1a2b3c.ngrok-free.app
+const QUERY = new URLSearchParams(location.search);
+const API_BASE = String(QUERY.get("api") || window.KB_API_BASE || "").replace(/\/+$/, "");
+// Demo mode (?demo=1): serve bundled sample data from web/demo/, no backend needed. Read-only.
+const DEMO = QUERY.get("demo") === "1";
+const DEMO_RUN = "demo-2026-11-21";
+const demoFile = (path) => {
+  const run = "/runs/" + DEMO_RUN;
+  const map = { "/config": "demo/config.json", "/runs": "demo/runs.json", "/scan/latest": "demo/scan-latest.json", "/brief": "demo/brief.txt" };
+  if (map[path]) return map[path];
+  if (path === run) return "demo/run.json";
+  if (path === run + "/scan") return "demo/run-scan.json";
+  if (path === run + "/events") return "demo/events.json";
+  if (path === run + "/report") return "demo/report.md";
+  if (path.startsWith(run + "/repos/")) return "demo/verdict.json";
+  return null;
+};
+const apiUrl = (path) => (DEMO ? demoFile(path) || "demo/missing.json" : API_BASE + path);
+
+let runId = decodeURIComponent(location.hash.slice(1)) || null;
+let run = null, settings = null, stream = null, lastEvent = 0, pollSoon = null;
+let events = [], perRepo = {}, cards = new Map();
+let reportShown = false, drawerRepo = null, drawerTab = "timeline", detail = null, detailKey = "";
+
+function el(tag, props, ...kids) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key === "onclick") node.addEventListener("click", value);
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const kid of kids.flat(3)) if (kid !== null && kid !== undefined && kid !== false) node.append(kid);
+  return node;
+}
+function icon(name, extra) {
+  const svg = document.createElementNS(SVG, "svg"); svg.setAttribute("class", "icon" + (extra ? " " + extra : ""));
+  const use = document.createElementNS(SVG, "use"); use.setAttribute("href", "#" + name); svg.append(use); return svg;
+}
+const onGitHub = (href) => typeof href === "string" && href.startsWith("https://github.com/");
+const onOsv = (href) => typeof href === "string" && href.startsWith("https://osv.dev/vulnerability/");
+const DEMO_ADVISORY = "GHSA-6v38-4h7w-rj9h / CVE-2026-96760. Authlib: JsonWebSignature.deserialize_json() accepts a JWS in JSON serialization whose signatures array is empty, and returns the payload as verified. Affected: authlib < 1.9.0. Fixed in 1.9.0. Published 27 October 2026.";
+function showError(text) { const box = $("start-error"); box.textContent = text || ""; box.hidden = !text; }
+function outLink(href, kids, title) {
+  // Only addresses the server built for GitHub become links.
+  return onGitHub(href) ? el("a", { class: "link", href, target: "_blank", rel: "noopener noreferrer", title }, kids) : null;
+}
+async function api(path, body) {
+  if (DEMO && body) throw new Error("Demo mode is read-only.");
+  const response = await fetch(apiUrl(path), body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
+  if (!response.ok) {
+    let problem = response.statusText;
+    try { const data = await response.json(); problem = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail); } catch (error) { /* keep the status text */ }
+    throw new Error(problem);
+  }
+  return response.json();
+}
+const clockTime = (iso) => { const date = new Date(iso); return isNaN(date) ? "" : date.toLocaleTimeString([], { hour12: false }); };
+const initials = (name) => name.split(/[-_.]/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "?";
+const fixText = (fix) => (fix ? (fix.kind === "upgrade" ? "upgrade to " + fix.target : String(fix.kind || "patch")) : "none");
+
+// ---------------------------------------------------------------- events
+function repoState(name) {
+  if (!perRepo[name]) perRepo[name] = { phase: "queued", first: null, last: null };
+  return perRepo[name];
+}
+function onEvent(event) {
+  if (typeof event.n !== "number" || event.n <= lastEvent) return;
+  lastEvent = event.n; events.push(event);
+  if (event.repo) {
+    const state = repoState(event.repo), before = state.phase;
+    state.first = state.first || event.t; state.last = event;
+    if (event.source === "orchestrator" && event.kind === "start") state.phase = "agent";
+    else if (event.source === "orchestrator" && (event.kind === "ok" || event.kind === "fail")) state.phase = "returned";
+    else if (event.source === "gate" && event.kind === "start") state.phase = "gate";
+    else if (event.source === "gate" && event.kind === "done") state.phase = "done";
+    if (state.phase !== before && run) renderGrid(); else updateLiveLine(event.repo);
+    if (drawerRepo === event.repo && drawerTab === "timeline") renderDrawerBody();
+  }
+  appendFeed(event);
+  if ((event.source === "gate" && event.kind === "done") || (!event.repo && event.kind !== "step")) { clearTimeout(pollSoon); pollSoon = setTimeout(poll, 150); }
+  renderPipeline();
+}
+function connect() {
+  if (stream) { stream.close(); stream = null; }
+  events = []; perRepo = {}; lastEvent = 0; cards.clear(); $("grid").replaceChildren();
+  $("feed").replaceChildren(el("div", { class: "empty", id: "feed-empty", text: "Every step of a run shows up here as it happens." }));
+  $("feed-count").textContent = "";
+  if (!runId) return;
+  if (DEMO) {  // no SSE in demo mode: load the bundled event log once
+    api("/runs/" + encodeURIComponent(runId) + "/events").then((data) => (data.events || []).forEach(onEvent)).catch(() => {});
+    return;
+  }
+  stream = new EventSource(apiUrl("/runs/" + encodeURIComponent(runId) + "/stream"));
+  stream.onmessage = (message) => { try { onEvent(JSON.parse(message.data)); } catch (error) { /* a line that is not an event */ } };
+  stream.addEventListener("end", () => { if (stream) stream.close(); stream = null; });
+}
+function appendFeed(event) {
+  const feed = $("feed"), empty = $("feed-empty");
+  if (empty) empty.remove();
+  const stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
+  const who = event.repo ? el("span", { class: "who", text: event.repo, title: "Open under the hood", onclick: () => openDrawer(event.repo) }) : null;
+  feed.append(el("div", { class: "ev k-" + event.kind, "data-source": event.source },
+    el("time", { text: clockTime(event.t) }),
+    el("span", { class: "src src-" + event.source, text: SOURCES[event.source] || "orchestrator" }),
+    el("span", { class: "msg" }, who, event.text)));
+  while (feed.childElementCount > 600) feed.firstElementChild.remove();
+  if (stick) feed.scrollTop = feed.scrollHeight;
+  $("feed-count").textContent = events.length + " events";
+}
+
+// ---------------------------------------------------------------- the run
+function renderHeader() {
+  const stage = run ? run.stage : null;
+  $("stage-text").textContent = run ? (STAGES[stage] || stage || "starting") : "no run yet";
+  $("stage").className = "pill" + (!run ? "" : stage === "approved" ? " good" : stage === "expired" || stage === "failed" ? " bad" : " live");
+  $("run-id").textContent = run ? run.run_id : "";
+  const status = $("status"); status.hidden = !run; status.textContent = run ? "workflow " + String(run.status || "").toLowerCase() : "";
+  if (run && run.error) showError(run.error.charAt(0).toUpperCase() + run.error.slice(1));
+
+  const facts = $("facts"), advisory = run && run.advisory;
+  facts.hidden = !advisory;
+  if (advisory) {
+    const lookedUp = (run.advisory_lookup || []).filter((item) => onOsv(item.url));
+    facts.replaceChildren(...[["advisory", advisory.id], ["package", advisory.package], ["affected", advisory.affected_range], ["flawed function", advisory.flawed_function]]
+      .map(([label, value]) => el("div", { class: "fact" }, el("span", { text: label }), el("b", { text: value || "?" }))),
+      lookedUp.length ? el("div", { class: "fact" }, el("span", { text: "looked up at OSV" }),
+        el("b", {}, lookedUp.map((item, index) => [index ? ", " : "", el("a", { href: item.url, target: "_blank", rel: "noopener noreferrer", text: item.id })]))) : null);
+  }
+
+  $("approve").disabled = !(run && stage === "awaiting_approval");
+  $("toggle-report").disabled = !(run && run.report_ready);
+  $("approval-note").textContent = run && stage === "approved" ? "Approved" + (run.approved_by ? " by " + run.approved_by : "") + ". A person now submits it."
+    : run && stage === "expired" ? "Nobody approved it within 24 hours." : "";
+}
+function renderPipeline() {
+  const stage = run ? run.stage : null, total = run ? run.repos_total : 0, gated = run ? run.tiles.length : 0;
+  const returned = Math.max(gated, Object.values(perRepo).filter((state) => ["returned", "gate", "done"].includes(state.phase)).length);
+  const noFacts = !!run && !run.advisory, failed = stage === "failed";
+  const mark = (done, active, bad) => (bad ? "failed" : done ? "done" : active ? "active" : "");
+  const steps = [
+    ["Intake", run ? "the clock is running" : "start a run", mark(!!run, false, false)],
+    ["Advisory read", run && run.advisory ? "four facts, checked" : failed && noFacts ? "stopped here" : "one model call", mark(!!(run && run.advisory), !!run && noFacts, failed && noFacts)],
+    ["Agents", total ? returned + " of " + total + " returned" : "one per repository", mark(total > 0 && returned >= total, stage === "triage", false)],
+    ["Gate", total ? gated + " of " + total + " re-checked" : "no model, re-runs it all", mark(total > 0 && gated >= total, stage === "triage" && returned > gated, false)],
+    ["Draft", run && run.report_ready ? "written, no model" : "from gated verdicts only", mark(!!(run && run.report_ready), stage === "report", false)],
+    ["Approval", stage === "approved" ? "by a person" : stage === "expired" ? "nobody approved" : "a person decides", mark(stage === "approved", stage === "awaiting_approval", stage === "expired")],
+  ];
+  const nodes = steps.map(([name, note, state], index) => el("div", { class: "step " + state },
+    el("div", { class: "bubble" }, state === "done" ? icon("i-check") : state === "failed" ? icon("i-x") : state === "active" ? icon("i-spinner", "spin") : String(index + 1)),
+    el("div", {}, el("b", { text: name }), el("small", { text: note }))));
+  if (settings) nodes.push(el("div", { class: "under" },
+    el("span", {}, "orchestrator ", el("b", { text: settings.orchestrator })),
+    el("span", {}, "workflow ", el("b", { text: settings.workflow })),
+    el("span", {}, "worker ", el("b", { text: settings.worker })),
+    el("span", {}, "fleet ", el("b", { text: settings.fleet.length + " repositories" })),
+    run ? el("span", {}, "pull requests ", el("b", { text: run.pull_requests ? "a draft for each verified fix" : "off" })) : null));
+  $("pipeline").replaceChildren(...nodes);
+}
+function renderSummary() {
+  const box = $("summary");
+  if (!run) { box.replaceChildren(el("span", { class: "muted", text: settings ? settings.fleet.length + " repositories wait in the fleet." : "" })); return; }
+  const chips = Object.entries(run.counts || {}).map(([kind, count]) => el("span", { class: "chip v-" + kind }, icon(VERDICT_ICON[kind] || "i-person"), count + " " + (TITLES[kind] || kind).toLowerCase()));
+  const pulls = run.tiles.filter((tile) => tile.pull_request && onGitHub(tile.pull_request.url)).length;
+  if (pulls) chips.push(el("span", { class: "chip v-affected_fixed" }, icon("i-pull"), pulls + (pulls === 1 ? " draft pull request opened" : " draft pull requests opened")));
+  box.replaceChildren(...chips, el("span", { class: "muted", text: run.tiles.length + " of " + run.repos_total + " repositories through the gate" }));
+}
+function repoLinks(link) {
+  if (!link) return null;
+  return el("span", { class: "links" },
+    outLink(link.url, [icon("i-repo"), "GitHub", icon("i-out")], "Open the repository"),
+    outLink(link.commit_url, [el("span", { class: "mono", text: String(link.commit || "").slice(0, 7) })], "The commit this run inspected"));
+}
+function pullRequest(left) {
+  // The link to the draft pull request with the fix, or one line on why there is none.
+  if (!left) return null;
+  if (onGitHub(left.url)) return el("a", { class: "pull", href: left.url, target: "_blank", rel: "noopener noreferrer", title: "Open the pull request on GitHub" },
+    icon("i-pull"), (left.draft ? "Draft pull request" : "Pull request") + (left.number ? " #" + left.number : ""), icon("i-out"));
+  return el("div", { class: "muted", style: "font-size:12px", text: left.refused ? "No pull request: " + left.refused : "The pull request could not be opened: " + (left.error || "see the activity log") });
+}
+function pathList(path) {
+  return el("ol", { class: "path" }, path.map((step) => {
+    const where = (step.file || "?") + (step.line ? ":" + step.line : "");
+    return el("li", {}, el("div", {},
+      onGitHub(step.href) ? el("a", { href: step.href, target: "_blank", rel: "noopener noreferrer", text: where, title: "Open this line on GitHub" }) : el("span", { class: "file", text: where }),
+      el("span", { class: "note", text: step.note || "" })));
+  }));
+}
+function buildCard(name, link, tile, state, stopped) {
+  const phase = state.phase, tone = tile ? "v-" + tile.verdict : phase === "queued" || stopped ? "v-queued" : "v-live";
+  const body = el("div", { class: "card-body" });
+  if (tile) {
+    body.append(el("div", { class: "state" }, icon(VERDICT_ICON[tile.verdict] || "i-person"), tile.title));
+    body.append(el("div", { class: "reason", text: tile.reason, title: tile.reason }));
+    if (tile.gate.failed_rules.length) body.append(el("div", {}, el("div", { class: "label", text: "Gate rules that failed" }), el("div", { class: "code-line", text: tile.gate.failed_rules.join(", ") })));
+    if (tile.proof.length) body.append(el("div", {}, el("div", { class: "label", text: "Proof, re-run by the gate" }), tile.proof.map((test) => el("div", { class: "code-line", text: test }))));
+    if (tile.fix) body.append(el("div", {}, el("div", { class: "label", text: "Fix" }), el("div", { text: fixText(tile.fix) })));
+    const pull = pullRequest(tile.pull_request); if (pull) body.append(pull);
+    if (tile.path.length) body.append(el("details", {}, el("summary", { text: "Code path followed (" + tile.path.length + ")" }), pathList(tile.path)));
+  } else if (stopped) {
+    // The run is over and this repository never got a verdict.
+    body.append(el("div", { class: "state" }, icon("i-minus"), "Not looked at"));
+    body.append(el("div", { class: "muted", text: "The run stopped before this repository had a verdict. Nothing is known about it." }));
+  } else {
+    const label = phase === "queued" ? "Queued" : phase === "agent" ? "Agent at work" : phase === "returned" ? "Waiting for the gate" : "Gate re-running the claim";
+    const agentDone = phase !== "queued" && phase !== "agent";
+    body.append(el("div", { class: "state" }, phase === "queued" ? icon("i-clock") : icon("i-spinner", "spin"), label));
+    body.append(el("div", { class: "phases" },
+      el("span", { class: "phase " + (agentDone ? "ok" : phase === "agent" ? "on" : "off") }, agentDone ? icon("i-check") : icon("i-search"), "agent"),
+      el("span", { class: "sep" }),
+      el("span", { class: "phase " + (phase === "gate" || phase === "done" ? "on" : "off") }, icon("i-shield"), "gate"),
+      el("span", { class: "sep" }),
+      el("span", { class: "phase off" }, "verdict")));
+    body.append(el("div", { class: "live-line", "data-live": name, text: state.last ? state.last.text : "Not started yet." }));
+    body.append(el("div", { class: "muted", style: "font-size:12px", text: "No verdict is shown until the gate has re-run it." }));
+  }
+  const usage = tile ? tile.usage || {} : {};
+  const numbers = [usage.seconds !== undefined && usage.seconds !== null ? usage.seconds + " s" : null, usage.tokens ? usage.tokens + " tokens" : null,
+    usage.cost_usd !== undefined && usage.cost_usd !== null ? "$" + usage.cost_usd : null].filter(Boolean).join(" · ");
+  return el("article", { class: "card " + tone },
+    el("div", { class: "card-head" }, el("div", { class: "avatar", text: initials(name) }), el("h3", { text: name, title: name }), repoLinks(link)),
+    body,
+    el("div", { class: "card-foot" }, el("span", { "data-elapsed": tile || stopped ? null : name, text: numbers }),
+      el("button", { onclick: () => openDrawer(name), title: "Timeline, gate checks, changes and raw output" }, icon("i-layers"), "Under the hood")));
+}
+function renderGrid() {
+  const grid = $("grid");
+  if (!run) { grid.replaceChildren(); cards.clear(); return; }
+  const tiles = Object.fromEntries(run.tiles.map((tile) => [tile.repo, tile]));
+  const stopped = ["failed", "expired", "approved"].includes(run.stage);
+  for (const repo of run.repos || []) {
+    const state = repoState(repo.name), tile = tiles[repo.name] || null;
+    const key = JSON.stringify([tile, tile ? null : state.phase, repo.link, tile ? null : stopped]);
+    const known = cards.get(repo.name);
+    if (known && known.key === key) continue;
+    const card = buildCard(repo.name, repo.link, tile, state, stopped);
+    if (known) known.node.replaceWith(card); else grid.append(card);
+    cards.set(repo.name, { key, node: card });
+  }
+}
+function updateLiveLine(name) {
+  const line = document.querySelector('[data-live="' + CSS.escape(name) + '"]'), state = perRepo[name];
+  if (line && state && state.last) line.textContent = state.last.text;
+}
+function tick() {
+  const clock = $("clock");
+  if (!run || !run.started_at || !run.deadline) { clock.textContent = "24:00:00"; clock.className = "clock idle"; $("bar-fill").style.width = "0"; return; }
+  const end = run.closed_at ? new Date(run.closed_at) : new Date();
+  const start = new Date(run.started_at), deadline = new Date(run.deadline);
+  const left = Math.max(0, deadline - end), used = Math.max(0, end - start);
+  const h = Math.floor(left / 3600000), m = Math.floor(left % 3600000 / 60000), s = Math.floor(left % 60000 / 1000);
+  clock.textContent = [h, m, s].map((n) => String(n).padStart(2, "0")).join(":"); clock.className = "clock";
+  $("bar-fill").style.width = Math.min(100, 100 * used / Math.max(1, deadline - start)).toFixed(2) + "%";
+  const minutes = Math.floor(used / 60000);
+  $("clock-note").textContent = (minutes < 1 ? Math.round(used / 1000) + " s" : minutes + " min") + " of the 24 hours used"
+    + (run.closed_at ? " when the run closed." : ". Early warning due " + deadline.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) + ".");
+  for (const [name, state] of Object.entries(perRepo)) {
+    if (state.phase === "queued" || !state.first) continue;
+    const slot = document.querySelector('[data-elapsed="' + CSS.escape(name) + '"]');
+    if (slot) slot.textContent = Math.max(0, Math.round((Date.now() - new Date(state.first)) / 1000)) + " s so far";
+  }
+}
+async function poll() {
+  if (!runId) return;
+  const asked = runId;
+  try {
+    const fresh = await api("/runs/" + encodeURIComponent(asked));
+    if (asked !== runId) return;
+    const moved = !run || run.stage !== fresh.stage;
+    run = fresh;
+    if (moved) loadRuns();
+    renderHeader(); renderPipeline(); renderSummary(); renderGrid(); tick();
+    pollScanRun();
+    if (reportShown && run.report_ready) await loadReport();
+    if (drawerRepo) await loadDetail();
+  } catch (error) { showError(error.message); }
+}
+async function loadReport() {
+  try { const response = await fetch(apiUrl("/runs/" + encodeURIComponent(runId) + "/report")); if (response.ok) $("report").textContent = await response.text(); } catch (error) { /* shown on the next poll */ }
+}
+function openRun(id) {
+  runId = id; run = null; reportShown = false; $("report-box").hidden = true; $("toggle-report").textContent = "Show the draft"; showError("");
+  closeDrawer(); connect(); renderHeader(); renderPipeline(); renderSummary(); tick(); poll(); pollScanRun(); loadRuns();
+}
+async function loadRuns() {
+  try {
+    const list = (await api("/runs")).runs;
+    $("runs").replaceChildren(el("option", { value: "", text: list.length ? "Recent runs" : "No runs yet" }),
+      ...list.map((item) => el("option", { value: item.run_id, selected: item.run_id === runId, text: item.run_id + " · " + (STAGES[item.stage] || item.stage || "") })));
+  } catch (error) { /* the list is a convenience */ }
+}
+
+// ---------------------------------------------------------------- kb-scan feed watch
+// Feed/scan output is untrusted input: the server already size-caps and sanitises it; here the
+// rendered list is capped again and every string goes on the page as text, never as markup.
+const SCAN_MAX_ITEMS = 12;
+let scanLatest = null;
+function scanItemNode(item) {
+  return el("div", { class: "scan-item" },
+    el("div", { class: "top-line" },
+      el("span", { class: "tier-chip", text: "tier " + (item.tier === null || item.tier === undefined ? "?" : String(item.tier)) }),
+      item.cve ? el("span", { class: "cve", text: String(item.cve) }) : null,
+      item.package ? el("span", { class: "pkg", text: String(item.package) }) : null),
+    item.title ? el("div", { class: "title", text: String(item.title) }) : null,
+    item.source ? el("div", { class: "src-line", text: String(item.source) }) : null);
+}
+function renderScan(boxId, tiersId, metaId, summary, emptyText) {
+  const box = $(boxId), tiers = $(tiersId), meta = $(metaId);
+  if (!summary || !Array.isArray(summary.items)) {
+    box.replaceChildren(el("div", { class: "empty", text: emptyText }));
+    tiers.replaceChildren(); meta.textContent = "";
+    return;
+  }
+  meta.textContent = summary.generated_at ? "scanned " + String(summary.generated_at) : "";
+  const tierChips = Object.entries(summary.tiers || {}).sort(([a], [b]) => String(a).localeCompare(String(b), undefined, { numeric: true }))
+    .map(([tier, count]) => el("span", { class: "chip v-queued", text: "tier " + tier + ": " + count }));
+  tiers.replaceChildren(el("span", { class: "chip v-live", text: String(summary.total) + " findings" }), ...tierChips);
+  const shown = summary.items.slice(0, SCAN_MAX_ITEMS);
+  const hidden = Math.max(0, (summary.total || shown.length) - shown.length);
+  box.replaceChildren(...shown.map(scanItemNode),
+    hidden > 0 ? el("div", { class: "empty", text: "+" + hidden + " more in the feed scan, not shown" }) : null);
+}
+async function pollScanLatest() {
+  try {
+    scanLatest = (await api("/scan/latest")).scan || null;
+    renderScan("scan-latest-items", "scan-latest-tiers", "scan-latest-meta", scanLatest, "The scan engine has not run yet.");
+  } catch (error) {
+    scanLatest = null;
+    renderScan("scan-latest-items", "scan-latest-tiers", "scan-latest-meta", null, "Cannot reach the backend for the feed scan: " + error.message);
+  }
+}
+async function pollScanRun() {
+  const panel = $("scan-run-panel");
+  if (!runId) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const asked = runId;
+  try {
+    const triage = (await api("/runs/" + encodeURIComponent(asked) + "/scan")).triage || null;
+    if (asked !== runId) return;
+    renderScan("scan-run-items", "scan-run-tiers", "scan-run-meta", triage, "No triage handoff for this run yet.");
+  } catch (error) {
+    if (asked !== runId) return;
+    renderScan("scan-run-items", "scan-run-tiers", "scan-run-meta", null, "Cannot reach the backend: " + error.message);
+  }
+}
+
+// ---------------------------------------------------------------- voice (GUI path)
+// The server-side Voxtral TTS brief stays the CLI path (`python3 tools/scan.py brief`, served by
+// `kb-scan serve` on 127.0.0.1:8787). In the GUI the browser speaks with the Web Speech API.
+const SCAN_SERVE_BASE = String(window.KB_SCAN_BASE || "http://127.0.0.1:8787").replace(/\/+$/, "");
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+const VOICE_LOG_MAX = 10, VOICE_ENTRY_MAX = 300;
+let recognition = null, micStream = null, listening = false, continuous = false, voiceBusy = false;
+let voiceLog = [], lastAnswer = null, lastSnapshot = null, prevSnapshot = null;
+function setVoiceStatus(text) { $("voice-status").textContent = text || ""; }
+function speak(text) {
+  if (!("speechSynthesis" in window)) { setVoiceStatus("This browser has no speechSynthesis, so it cannot speak."); return; }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(String(text).slice(0, 600));
+  utterance.onend = () => { if (!listening) setVoiceStatus("Spoken."); };
+  utterance.onerror = () => { if (!listening) setVoiceStatus("The browser could not speak that."); };
+  window.speechSynthesis.speak(utterance);
+}
+async function fetchBriefText() {
+  // First the backend proxy when one exists (GET <api>/brief), else kb-scan serve's own /brief.
+  const candidates = [apiUrl("/brief")];
+  if (SCAN_SERVE_BASE + "/brief" !== candidates[0]) candidates.push(SCAN_SERVE_BASE + "/brief");
+  const problems = [];
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) { const text = (await response.text()).trim(); if (text) return text; problems.push(url + ": empty"); }
+      else problems.push(url + ": HTTP " + response.status);
+    } catch (error) { problems.push(url + ": " + error.message); }
+  }
+  throw new Error("No brief available (" + problems.join("; ") + ").");
+}
+// Rolling transcript: last VOICE_LOG_MAX "You asked"/"Answer" exchanges, each capped, text only.
+function addVoiceEntry(kind, text) {
+  voiceLog.push({ kind, text: String(text).slice(0, VOICE_ENTRY_MAX) });
+  while (voiceLog.length > VOICE_LOG_MAX) voiceLog.shift();
+  const log = $("voice-log");
+  log.replaceChildren(...voiceLog.map((entry) => el("div", { class: "voice-entry " + entry.kind },
+    el("span", { class: "who", text: entry.kind === "you" ? "You asked" : "Answer" }),
+    el("span", { text: entry.text }))));
+  log.scrollTop = log.scrollHeight;
+}
+// The same poll state the tiles render: every spoken number comes from here.
+function snapshotState() {
+  return {
+    at: Date.now(),
+    feedTotal: scanLatest && typeof scanLatest.total === "number" ? scanLatest.total : null,
+    feedAt: scanLatest && scanLatest.generated_at ? String(scanLatest.generated_at) : "",
+    gated: run ? run.tiles.length : 0,
+    repos: run ? run.repos_total : 0,
+    stage: run ? String(run.stage || "") : "",
+  };
+}
+function summarizeState() {
+  const s = snapshotState();
+  prevSnapshot = lastSnapshot; lastSnapshot = s;
+  return "Feed watch shows " + (s.feedTotal === null ? "no" : s.feedTotal) + " unverified findings"
+    + (s.feedAt ? " from " + s.feedAt : "")
+    + ". This run has " + s.gated + " of " + s.repos + " repositories through the gate"
+    + (s.stage ? ", stage " + s.stage : "") + ".";
+}
+// Follow-ups answered from the rolling log and current state, without a new fetch.
+function answerFromState(question) {
+  if (/(top|first|highest|worst|most severe)/.test(question)) {
+    const item = scanLatest && Array.isArray(scanLatest.items) ? scanLatest.items[0] : null;
+    if (!item) return "The feed watch has no findings to rank yet.";
+    return "The top unverified feed finding is tier " + (item.tier === null || item.tier === undefined ? "?" : String(item.tier))
+      + (item.cve ? ", " + String(item.cve) : "") + (item.title ? ": " + String(item.title).slice(0, 120) : "")
+      + ". That is unverified feed data, not a verdict.";
+  }
+  if (/(what changed|any change|different|since the last)/.test(question) && lastSnapshot && prevSnapshot) {
+    const feedDelta = (lastSnapshot.feedTotal === null ? 0 : lastSnapshot.feedTotal) - (prevSnapshot.feedTotal === null ? 0 : prevSnapshot.feedTotal);
+    const gateDelta = lastSnapshot.gated - prevSnapshot.gated;
+    return "Since the last check, unverified feed findings went from " + (prevSnapshot.feedTotal === null ? "unknown" : prevSnapshot.feedTotal)
+      + " to " + (lastSnapshot.feedTotal === null ? "unknown" : lastSnapshot.feedTotal)
+      + " (" + (feedDelta > 0 ? "+" : "") + feedDelta + "), and repositories through the gate from "
+      + prevSnapshot.gated + " to " + lastSnapshot.gated + " (" + (gateDelta > 0 ? "+" : "") + gateDelta + ").";
+  }
+  return lastAnswer;  // "repeat that" / "say again" and anything else: the last answer stands
+}
+async function handleVoiceQuery(text) {
+  if (voiceBusy) return;
+  const question = String(text).slice(0, VOICE_ENTRY_MAX);
+  const q = question.toLowerCase();
+  if (q.includes("stop listening") || q.includes("stop voice")) { stopListening(); const line = "Stopped listening."; addVoiceEntry("answer", line); speak(line); return; }
+  addVoiceEntry("you", question);
+  const wantsRefresh = ["threat", "scan", "brief", "new"].some((word) => q.includes(word));
+  let answer = null;
+  if (!wantsRefresh && lastSnapshot) answer = answerFromState(q);
+  if (answer === null) {
+    voiceBusy = true; setVoiceStatus("Refreshing the feed watch and this run…");
+    await Promise.allSettled([pollScanLatest(), poll(), pollScanRun()]);
+    voiceBusy = false;
+    answer = summarizeState();
+  }
+  lastAnswer = answer;
+  addVoiceEntry("answer", answer);
+  setVoiceStatus(answer);
+  speak(answer);
+}
+function setListeningUI() {
+  const ask = $("voice-ask"), cont = $("voice-continuous");
+  ask.classList.toggle("listening", listening && !continuous);
+  cont.classList.toggle("listening", listening && continuous);
+  ask.textContent = listening && !continuous ? "Stop" : "Ask by voice";
+  cont.textContent = listening && continuous ? "Stop listening" : "Listen continuously";
+}
+function stopListening() {
+  listening = false; continuous = false;
+  if (recognition) { try { recognition.stop(); } catch (error) { /* already stopped */ } recognition = null; }
+  if (micStream) { micStream.getTracks().forEach((track) => track.stop()); micStream = null; }
+  $("voice-live").textContent = "";
+  setListeningUI();
+}
+async function startListening(mode) {
+  if (!SpeechRecognitionCtor || listening) return;
+  continuous = mode === "continuous";
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    continuous = false;
+    setVoiceStatus("Microphone refused: " + error.message + " (a secure context — HTTPS or localhost — is required)");
+    return;
+  }
+  recognition = new SpeechRecognitionCtor();
+  recognition.lang = navigator.language || "en-US";
+  recognition.interimResults = continuous;  // live interim transcript in continuous mode only
+  recognition.onresult = (event) => {
+    const result = event.results[event.results.length - 1];
+    const transcript = result[0].transcript;
+    if (continuous) $("voice-live").textContent = result.isFinal ? "" : "Heard: “" + String(transcript).slice(0, VOICE_ENTRY_MAX) + "”";
+    if (result.isFinal) { $("voice-live").textContent = ""; handleVoiceQuery(transcript); }
+  };
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") { stopListening(); setVoiceStatus("Voice input error: " + event.error); }
+    else setVoiceStatus("Voice input: " + event.error + (listening ? " — still listening" : ""));
+  };
+  recognition.onend = () => {
+    // Continuous mode restarts automatically while enabled; otherwise the session is over.
+    if (listening && continuous && recognition) { try { recognition.start(); } catch (error) { stopListening(); } }
+    else setListeningUI();
+  };
+  listening = true;
+  setListeningUI();
+  setVoiceStatus(continuous ? "Listening continuously — say “stop listening” or toggle it off."
+    : "Listening. Ask about threats, the scan, the brief, or what is new.");
+  try { recognition.start(); } catch (error) { stopListening(); setVoiceStatus("Could not start voice input: " + error.message); }
+}
+window.addEventListener("pagehide", () => { stopListening(); if ("speechSynthesis" in window) window.speechSynthesis.cancel(); });
+
+// ---------------------------------------------------------------- under the hood
+function openDrawer(name) {
+  drawerRepo = name; detail = null; detailKey = ""; drawerTab = "timeline";
+  $("drawer").hidden = false; $("scrim").hidden = false; renderDrawer(); loadDetail();
+}
+function closeDrawer() { drawerRepo = null; detail = null; $("drawer").hidden = true; $("scrim").hidden = true; }
+async function loadDetail() {
+  if (!drawerRepo || !runId) return;
+  const asked = drawerRepo;
+  try {
+    const fresh = await api("/runs/" + encodeURIComponent(runId) + "/repos/" + encodeURIComponent(asked) + "/detail");
+    if (asked !== drawerRepo) return;
+    const key = JSON.stringify({ ...fresh, events: null });
+    if (key === detailKey) return;
+    detail = fresh; detailKey = key; renderDrawer();
+  } catch (error) { $("drawer-body").replaceChildren(el("div", { class: "error", text: error.message })); }
+}
+function renderDrawer() {
+  if (!drawerRepo) return;
+  const link = detail ? detail.link : (((run && run.repos) || []).find((item) => item.name === drawerRepo) || {}).link;
+  const verdict = detail && detail.checked ? detail.verdict : null;
+  $("drawer-title").replaceChildren(el("div", { class: "avatar v-" + (verdict || "live"), text: initials(drawerRepo) }), el("h2", { text: drawerRepo }), repoLinks(link),
+    verdict ? el("span", { class: "chip v-" + verdict, text: detail.title || verdict }) : el("span", { class: "chip v-live", text: "not through the gate yet" }),
+    detail && detail.pull_request && onGitHub(detail.pull_request.url) ? pullRequest(detail.pull_request) : null,
+    el("button", { class: "quiet", onclick: closeDrawer, title: "Close" }, icon("i-x")));
+  $("tabs").replaceChildren(...TABS.map(([id, name]) => el("button", { class: id === drawerTab ? "on" : "", onclick: () => { drawerTab = id; renderDrawer(); }, text: name })));
+  renderDrawerBody();
+}
+function codeBox(tag, title, text, diff) {
+  const pre = el("pre", {});
+  if (diff) for (const line of String(text).split("\n")) pre.append(el("span", { class: line.startsWith("+") && !line.startsWith("+++") ? "diff-add" : line.startsWith("-") && !line.startsWith("---") ? "diff-del" : "diff-meta", text: line || " " }));
+  else pre.textContent = text;
+  return el("div", { class: "box" }, el("div", { class: "box-head" }, el("span", { class: "tag", text: tag }), el("span", { class: "mono", text: title })), pre);
+}
+function renderDrawerBody() {
+  const body = $("drawer-body"); if (!drawerRepo) return;
+  if (drawerTab === "timeline") {
+    const mine = events.filter((event) => event.repo === drawerRepo);
+    const first = mine.length ? new Date(mine[0].t) : null;
+    const rows = mine.map((event) => el("div", { class: "tl k-" + event.kind },
+      el("time", { text: "+" + ((new Date(event.t) - first) / 1000).toFixed(1) + " s", title: clockTime(event.t) }),
+      el("span", { class: "src src-" + event.source, text: SOURCES[event.source] || "orchestrator" }), el("span", { class: "msg", text: event.text })));
+    body.replaceChildren(el("p", { class: "muted", text: "Every step for this repository, in order. Lines marked worker are what the worker itself reported, and nobody checked them. Lines marked gate are the gate's own re-runs." }),
+      rows.length ? el("div", {}, rows) : el("div", { class: "empty", text: "Nothing has happened for this repository yet." }));
+    return;
+  }
+  if (!detail) { body.replaceChildren(el("div", { class: "empty", text: "Loading." })); return; }
+  if (drawerTab === "gate") {
+    if (!detail.gate) { body.replaceChildren(el("div", { class: "empty", text: "The gate has not finished with this repository." })); return; }
+    const gate = detail.gate, kept = gate.passed === true, claimed = (TITLES[gate.claimed] || String(gate.claimed)).toLowerCase();
+    const rules = gate.rules.map((rule) => {
+      const state = rule.passed === true ? "pass" : rule.enforced ? "fail" : "soft";
+      return el("div", { class: "rule " + state }, el("div", { class: "mark" }, icon(state === "pass" ? "i-check" : state === "fail" ? "i-x" : "i-minus")),
+        el("div", {}, el("b", { text: rule.label + (rule.enforced ? "" : " (recorded, not enforced)") }), rule.detail ? el("small", { text: rule.detail }) : null));
+    });
+    body.replaceChildren(
+      el("div", { class: "callout " + (gate.claimed === "needs_human" ? "v-needs_human" : kept ? "v-affected_fixed" : "v-needs_human"),
+        text: gate.claimed === "needs_human" ? "The worker asked for a person, so there was no claim to re-run."
+          : kept ? "The gate re-ran the claim of " + claimed + " itself, and it stands." : "The gate rejected the claim of " + claimed + ". It goes to a person." }),
+      el("dl", { class: "kv" }, el("dt", { text: "Checked at" }), el("dd", { text: gate.checked_at || "?" }),
+        el("dt", { text: "Agent tests ran" }), el("dd", { text: gate.sandboxed === true ? "inside the sandbox" : gate.sandboxed === false ? "outside the sandbox (allowed for the stand-in only)" : "none: nothing needed running" })),
+      el("div", {}, rules));
+    return;
+  }
+  if (drawerTab === "changes") {
+    const boxes = detail.files.map((file) => codeBox(file.change, file.name, file.text, file.change === "changed"));
+    const gone = detail.deleted.map((name) => el("div", { class: "code-line", text: "deleted: " + name }));
+    body.replaceChildren(el("p", { class: "muted", text: "The worker gets a fresh copy of the repository. This is everything that differs from the original afterwards." }),
+      ...(boxes.length || gone.length ? [...boxes, ...gone] : [el("div", { class: "empty", text: "Nothing was changed, added or deleted." })]));
+    return;
+  }
+  if (drawerTab === "claim") {
+    const claim = detail.claim;
+    if (!claim) { body.replaceChildren(el("div", { class: "empty", text: "The worker left no verdict." })); return; }
+    body.replaceChildren(
+      claim.rejected ? el("div", { class: "callout v-needs_human", text: "The gate rejected this claim. It is shown here for inspection only. It is not a result and appears nowhere else." })
+        : el("div", { class: "callout v-not_affected", text: detail.checked ? "This is what the worker claimed. The gate checked it: see Gate checks." : "This is what the worker claims. The gate has not checked it yet." }),
+      el("dl", { class: "kv" }, el("dt", { text: "Claimed verdict" }), el("dd", { class: "mono", text: claim.verdict }),
+        el("dt", { text: "Reason" }), el("dd", { text: claim.reason }),
+        el("dt", { text: "Proof tests" }), el("dd", {}, claim.proof.length ? claim.proof.map((test) => el("div", { class: "code-line", text: test })) : "none"),
+        el("dt", { text: "Fix" }), el("dd", { text: fixText(claim.fix) }),
+        el("dt", { text: "Follow-ups" }), el("dd", {}, claim.follow_ups.length ? claim.follow_ups.map((item) => el("div", { text: item })) : "none")),
+      claim.path.length ? el("div", {}, el("div", { class: "label", text: "Code path it cites" }), pathList(claim.path)) : null);
+    return;
+  }
+  const usage = detail.usage || {}, shown = (value) => (value === null || value === undefined ? "?" : value);
+  body.replaceChildren(
+    el("dl", { class: "kv" }, el("dt", { text: "Worker time" }), el("dd", { text: shown(usage.seconds) + " s" }),
+      el("dt", { text: "Tokens, cost, steps" }), el("dd", { text: [usage.tokens, usage.cost_usd, usage.steps].map(shown).join(" · ") }),
+      el("dt", { text: "Gated verdict file" }), el("dd", {}, detail.checked ? el("a", { href: apiUrl("/runs/" + encodeURIComponent(runId) + "/repos/" + encodeURIComponent(drawerRepo) + "/verdict.json"), target: "_blank", rel: "noopener", text: "verdict.json" }) : "not yet")),
+    detail.gate_log ? codeBox("gate log", "the gate's own commands and their output, last part", detail.gate_log) : el("div", { class: "empty", text: "The gate ran no commands for this repository." }),
+    detail.export ? codeBox("worker export", "what the worker left behind", detail.export) : null);
+}
+
+// ---------------------------------------------------------------- wiring
+$("start").addEventListener("click", async () => {
+  showError("");
+  if ($("advisory").value.trim().length < 10) { showError("Paste an advisory first, or type its CVE or GHSA identifier."); return; }
+  try { const started = await api("/runs", { advisory_text: $("advisory").value }); runId = started.run_id; location.hash = started.run_id; openRun(started.run_id); }
+  catch (error) { showError(error.message); }
+});
+$("demo").addEventListener("click", () => { $("advisory").value = DEMO_ADVISORY; showError(""); $("advisory").focus(); });
+$("approve").addEventListener("click", async () => {
+  try { await api("/runs/" + encodeURIComponent(runId) + "/approve", { approved_by: $("approver").value }); await poll(); }
+  catch (error) { $("approval-note").textContent = error.message; }
+});
+$("toggle-report").addEventListener("click", async () => {
+  reportShown = !reportShown; $("report-box").hidden = !reportShown; $("toggle-report").textContent = reportShown ? "Hide the draft" : "Show the draft";
+  if (reportShown) await loadReport();
+});
+$("runs").addEventListener("change", (event) => { if (event.target.value) location.hash = event.target.value; });
+$("scrim").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeDrawer(); });
+window.addEventListener("hashchange", () => { const wanted = decodeURIComponent(location.hash.slice(1)); if (wanted && wanted !== runId) openRun(wanted); });
+$("filters").replaceChildren(...[["all", "All"], ["orchestrator", "Orchestrator"], ["worker", "Workers"], ["gate", "Gate"]].map(([id, name]) =>
+  el("button", { class: id === "all" ? "on" : "", text: name, onclick: (event) => {
+    $("feed").dataset.filter = id;
+    for (const button of $("filters").children) button.className = button === event.currentTarget ? "on" : "";
+  } })));
+
+$("speak-brief").addEventListener("click", async () => {
+  setVoiceStatus("Fetching the brief…");
+  try { const brief = await fetchBriefText(); setVoiceStatus("Brief: " + brief.slice(0, 120) + (brief.length > 120 ? "…" : "")); speak(brief); }
+  catch (error) { setVoiceStatus(error.message); }
+});
+if (SpeechRecognitionCtor && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) { $("voice-ask").hidden = false; $("voice-continuous").hidden = false; }
+$("voice-ask").addEventListener("click", () => { listening ? stopListening() : startListening("once"); });
+$("voice-continuous").addEventListener("click", () => { listening && continuous ? stopListening() : startListening("continuous"); });
+if (!("speechSynthesis" in window)) { $("speak-brief").disabled = true; $("voice-status").textContent = "This browser has no speechSynthesis."; }
+
+api("/config").then((config) => {
+  settings = config; $("orchestrator").textContent = config.orchestrator; $("fleet").textContent = config.fleet.length + " repositories in the fleet";
+  $("standin").hidden = !config.stand_in_worker; renderPipeline(); renderSummary();
+}).catch(() => { $("orchestrator").textContent = "not connected"; });
+if (DEMO) {
+  document.title = "DEMO · " + document.title;
+  const banner = el("div", { id: "demo-banner", text: "DEMO MODE — bundled sample data (web/demo/). Add ?api=https://<backend> to use a live backend." });
+  banner.style.cssText = "padding:6px 12px;background:#3a2f00;color:#ffd97a;font-size:12px;text-align:center";
+  document.body.prepend(banner);
+  if (!runId) openRun(DEMO_RUN);
+}
+renderHeader(); renderPipeline(); renderSummary(); loadRuns(); pollScanLatest();
+if (runId && !DEMO) openRun(runId);
+setInterval(poll, 2000);
+setInterval(tick, 1000);
+setInterval(pollScanLatest, 10000);
+</script>
+</body>
+</html>

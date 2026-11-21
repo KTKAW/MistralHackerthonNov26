@@ -1,0 +1,10 @@
+{
+  "repo": "auth-gateway",
+  "verdict": "affected_fixed",
+  "advisory": { "id": "CVE-2026-96760", "package": "authlib", "affected_range": "<1.9.0", "flawed_function": "JsonWebSignature.deserialize_json()" },
+  "reason": "Demo verdict: the gateway deserializes JWS tokens from the session cookie via authlib < 1.9.0.",
+  "path": [{ "file": "src/session.py", "line": 41, "note": "cookie -> deserialize_json()" }],
+  "proof": ["test_jws_empty_signatures_rejected"],
+  "fix": { "kind": "upgrade", "target": "authlib==1.9.0" },
+  "gate": { "passed": true, "checked_at": "2026-11-21T09:06:30+00:00", "sandboxed": true, "rules": { "proof_fails_on_vulnerable": { "passed": true, "enforced": true, "detail": "exited 1" }, "proof_passes_on_fixed": { "passed": true, "enforced": true, "detail": "exited 0" } } }
+}

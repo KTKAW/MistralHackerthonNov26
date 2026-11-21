@@ -1,0 +1,14 @@
+{
+  "run_id": "demo-2026-11-21",
+  "triage": {
+    "schema": "kb-scan-triage/1",
+    "generated_at": "2026-11-21T16:55:00Z",
+    "total": 2,
+    "tiers": { "1": 1, "2": 1 },
+    "items": [
+      { "tier": "1", "cve": "CVE-2026-96760", "package": "authlib", "title": "Matches this run's advisory and this repo's inventory (demo sample)", "source": "kev" },
+      { "tier": "2", "cve": "CVE-2026-126347", "package": "tornado", "title": "Also present in the demo fleet (demo sample)", "source": "osv" }
+    ],
+    "truncated": false
+  }
+}

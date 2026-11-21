@@ -1,0 +1,11 @@
+{
+  "packages": [
+    { "ecosystem": "npm", "name": "lodash", "version": "4.17.20" },
+    { "ecosystem": "npm", "name": "left-pad", "version": "1.3.0" },
+    { "ecosystem": "PyPI", "name": "requests", "version": "2.31.0" }
+  ],
+  "products": [
+    { "vendor": "Microsoft", "product": "Exchange Server" }
+  ],
+  "cves": ["CVE-2021-44228"]
+}

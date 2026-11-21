@@ -1,0 +1,5 @@
+{
+  "runs": [
+    { "run_id": "demo-2026-11-21", "stage": "awaiting_approval", "started_at": "2026-11-21T09:00:00+00:00", "advisory": "CVE-2026-96760" }
+  ]
+}
