@@ -1,0 +1,35 @@
+(version 1)
+(deny default)
+
+;; processes may exec/fork/signal
+(allow process-exec*)
+(allow process-fork)
+(allow signal (target self))
+(allow sysctl-read)
+(allow mach-lookup)
+
+;; NO NETWORK
+(deny network*)
+
+;; read system + python + the work copy, but never secrets
+(allow file-read*
+  (subpath "/usr")
+  (subpath "/bin")
+  (subpath "/sbin")
+  (subpath "/System")
+  (subpath "/Library")
+  (subpath "/private")
+  (subpath "__PYDIR__")
+  (subpath "__WORKDIR__"))
+(deny file-read*
+  (subpath "__WORKDIR__/.env")
+  (subpath "__WORKDIR__/secrets")
+  (literal "/dev/urandom"))
+
+;; write ONLY inside the work copy and temp dirs
+(allow file-write*
+  (subpath "__WORKDIR__")
+  (subpath "/tmp")
+  (subpath "/private/tmp")
+  (subpath "/private/var/tmp")
+  (subpath "/dev/null"))
