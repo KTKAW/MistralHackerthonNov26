@@ -13,3 +13,6 @@ tools/scan/out/
 
 # kb-scan run artifacts
 tools/scan/runs/
+
+# Le Chonk run artifacts (incl. simulated)
+runs/
