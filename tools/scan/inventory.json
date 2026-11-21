@@ -1,0 +1,18 @@
+{
+ "cves": [],
+ "packages": [
+  {
+   "ecosystem": "docker",
+   "name": "rust",
+   "source": "tools/scan/Dockerfile",
+   "version": "1-musl"
+  },
+  {
+   "ecosystem": "docker",
+   "name": "scratch",
+   "source": "tools/scan/Dockerfile",
+   "version": "latest"
+  }
+ ],
+ "products": []
+}

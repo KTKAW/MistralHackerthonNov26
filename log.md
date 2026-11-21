@@ -114,3 +114,8 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 ## [2026-11-21] edit | Serialise git-touching CLI tests (GIT_TEST_LOCK) — 88/88 green, no flakes
 
 - tools/scan/tests/cli.rs
+
+## [2026-11-21] edit | Codebase-derived inventory generator (tools/scan/inventory.py)
+
+- tools/scan/inventory.json
+- tools/scan/inventory.py
