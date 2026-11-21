@@ -16,6 +16,15 @@ noted):
 2. Never delete or weaken an existing test.
 3. Never edit the installed library (anything under `../.venv/.../site-packages/`).
 
+## Work efficiently — the run has a hard time limit
+
+Each model turn is slow; the whole triage should take only a handful of tool calls.
+Read only what you need: the service's own source files and the flawed function's source inside
+`../.venv/.../site-packages/<package>/` — do NOT browse or read the whole site-packages tree,
+do not read unrelated files, and do not re-read files you already have. Decide the verdict as
+early as possible and write `../verdict.json` immediately after the decision (see the output
+contract), then do proof/fix/re-verify and update the file.
+
 ## Stages
 
 1. **READ** the advisory facts (`../advisory.json`) and the installed library's source (it is in your venv).
