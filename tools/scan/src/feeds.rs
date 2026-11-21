@@ -162,36 +162,48 @@ pub fn fetch_kev(cfg: &Config) -> (Vec<KevEntry>, FeedStatus, Option<String>) {
     }
 }
 
+/// Ecosystems OSV actually indexes. Anything else (docker, github-actions, ...) makes
+/// querybatch answer HTTP 400 for the WHOLE batch, so those packages are skipped here
+/// (they are still covered by the KEV/EPSS product matching).
+pub fn osv_ecosystem_supported(osv_ecosystem: &str) -> bool {
+    matches!(
+        osv_ecosystem,
+        "npm" | "PyPI" | "crates.io" | "Go" | "Maven" | "RubyGems" | "NuGet" | "Packagist"
+            | "Pub" | "Hex" | "npm" | "Packagist" | "SwiftURL" | "GitHub Actions" | "Linux"
+            | "Debian" | "Ubuntu" | "Alpine" | "Wolfi" | "Chainguard" | "Rocky Linux" | "AlmaLinux"
+            | "Android" | "OSS-Fuzz" | "Conan" | "C/C++" | "OSS-Fuzz"
+    )
+}
+
 fn osv_query_body(packages: &[Package]) -> String {
     let queries: Vec<Value> = packages
         .iter()
+        .filter(|p| osv_ecosystem_supported(&p.ecosystem))
         .map(|p| {
-            Value::obj(vec![
-                (
-                    "package".to_string(),
-                    Value::obj(vec![
-                        ("name".to_string(), Value::str(&p.name)),
-                        ("ecosystem".to_string(), Value::str(&p.ecosystem)),
-                    ]),
-                ),
-                ("version".to_string(), Value::str(&p.version)),
-            ])
+            // An empty version is omitted, not sent as "": OSV rejects "" with HTTP 400
+            // and one bad query fails the whole batch.
+            let mut package = vec![
+                ("name".to_string(), Value::str(&p.name)),
+                ("ecosystem".to_string(), Value::str(&p.ecosystem)),
+            ];
+            if !p.version.is_empty() {
+                package.push(("version".to_string(), Value::str(&p.version)));
+            }
+            Value::obj(vec![("package".to_string(), Value::obj(package))])
         })
         .collect();
     json::to_compact(&Value::obj(vec![("queries".to_string(), Value::arr(queries))]))
 }
 
 fn osv_single_body(p: &Package) -> String {
-    json::to_compact(&Value::obj(vec![
-        (
-            "package".to_string(),
-            Value::obj(vec![
-                ("name".to_string(), Value::str(&p.name)),
-                ("ecosystem".to_string(), Value::str(&p.ecosystem)),
-            ]),
-        ),
-        ("version".to_string(), Value::str(&p.version)),
-    ]))
+    let mut package = vec![
+        ("name".to_string(), Value::str(&p.name)),
+        ("ecosystem".to_string(), Value::str(&p.ecosystem)),
+    ];
+    if !p.version.is_empty() {
+        package.push(("version".to_string(), Value::str(&p.version)));
+    }
+    json::to_compact(&Value::obj(vec![("package".to_string(), Value::obj(package))]))
 }
 
 fn osv_findings_from_vuln(v: &Value, pkg: &Package, out: &mut Vec<Finding>) {
@@ -301,7 +313,7 @@ pub fn github_ecosystem(osv_ecosystem: &str) -> String {
     match osv_ecosystem {
         "npm" => "npm",
         "PyPI" => "pip",
-        "crates.io" => "cargo",
+        "crates.io" => "rust",  // GitHub's ecosystem value for Rust crates is "rust", not "cargo" (422 otherwise)
         "Go" => "go",
         "Maven" => "maven",
         "RubyGems" => "rubygems",
@@ -327,12 +339,23 @@ pub fn query_github(cfg: &Config, packages: &[Package]) -> (Vec<Finding>, FeedSt
         if rate_limited {
             break;
         }
+        // Ecosystems the Advisory Database does not know (docker, github-actions, ...)
+        // answer 422 and fail the shard — skip them; OSV still covers them.
         let eco = github_ecosystem(&pkg.ecosystem);
+        if matches!(pkg.ecosystem.as_str(), "docker" | "github-actions") {
+            continue;
+        }
+        // Empty version: query the package without "@version" (a trailing "@" is a 422).
+        let affects = if pkg.version.is_empty() {
+            pkg.name.clone()
+        } else {
+            format!("{}@{}", pkg.name, pkg.version)
+        };
         let url = match url::build_url(
             GITHUB_ADVISORIES_URL,
             &[
                 ("ecosystem".to_string(), eco),
-                ("affects".to_string(), format!("{}@{}", pkg.name, pkg.version)),
+                ("affects".to_string(), affects),
             ],
         ) {
             Ok(u) => u,
@@ -556,14 +579,19 @@ mod tests {
         let single = osv_single_body(&pkgs[0]);
         let sv = json::parse(&single).unwrap();
         assert!(sv.get("queries").is_none());
-        assert_eq!(sv.get("version").and_then(|x| x.as_str()), Some("1.0.0"));
+        // version lives inside "package", and is omitted entirely when empty (OSV 400s on "")
+        let pkg = sv.get("package").unwrap();
+        assert_eq!(pkg.get("version").and_then(|x| x.as_str()), Some("1.0.0"));
+        let no_version = osv_single_body(&Package { ecosystem: "npm".into(), name: "p".into(), version: "".into(), source: None });
+        let nv = json::parse(&no_version).unwrap();
+        assert!(nv.get("package").unwrap().get("version").is_none());
     }
 
     #[test]
     fn github_ecosystem_mapping() {
         assert_eq!(github_ecosystem("npm"), "npm");
         assert_eq!(github_ecosystem("PyPI"), "pip");
-        assert_eq!(github_ecosystem("crates.io"), "cargo");
+        assert_eq!(github_ecosystem("crates.io"), "rust");
         assert_eq!(github_ecosystem("Go"), "go");
     }
 

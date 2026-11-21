@@ -132,6 +132,13 @@ def build_inventory(root: Path = ROOT) -> dict:
 
     def add(items: list[dict], source: str) -> None:
         for p in items:
+            # OSV/GitHub reject malformed versions with HTTP 400/422 and fail the whole
+            # batch — normalise to a bare semver-ish string or drop the version (the
+            # feeds then match any version of the package).
+            version = str(p.get("version", "")).lstrip("=^~> <").strip()
+            if version and not re.match(r"^\d+(\.\d+){0,3}([-+].*)?$", version):
+                version = ""
+            p["version"] = version
             key = (p.get("ecosystem"), p.get("name"), p.get("version"))
             if key not in seen:
                 seen.add(key)

@@ -2,6 +2,354 @@
  "cves": [],
  "packages": [
   {
+   "ecosystem": "PyPI",
+   "name": "mistralai-workflows",
+   "source": "pyproject.toml",
+   "version": "3.20.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "aws-lc-rs",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/Cargo.toml",
+   "version": "1"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "pyo3",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/Cargo.toml",
+   "version": "0.29"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "pyo3-async-runtimes",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/Cargo.toml",
+   "version": "0.29"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "temporalio-client",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/Cargo.toml",
+   "version": "1.1.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "temporalio-common",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/Cargo.toml",
+   "version": "1.1.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "temporalio-sdk-core",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/Cargo.toml",
+   "version": "0.10.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "tokio-rustls",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/Cargo.toml",
+   "version": "0.26"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "clap",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/changelog-release-notes/Cargo.toml",
+   "version": "4.5"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "petname",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/changelog-release-notes/Cargo.toml",
+   "version": "3.2.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "chrono",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/changelog-release-notes/Cargo.toml",
+   "version": "0.4.45"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "reqwest",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/changelog-release-notes/Cargo.toml",
+   "version": "0.13"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "serde",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/changelog-release-notes/Cargo.toml",
+   "version": "1.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "backon",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "1.6"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "bon",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "3"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "futures-util",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "0.3"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "hyper",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "1.7.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "tokio",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "1.47"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "rustls-native-certs",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "0.8"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "tower",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "0.5"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "uuid",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/client/Cargo.toml",
+   "version": "1.18"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "dirs",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "7.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "futures",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.3"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "futures-channel",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.3"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "http-body-util",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.1"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "hyper",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "1.7"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "hyper-util",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.1"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "opentelemetry_sdk",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.32"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "opentelemetry-otlp",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.32"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "parking_lot",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.12"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "prometheus",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.14"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "ringbuf",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.5"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "rustls",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.23"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "toml",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "1.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "tracing-subscriber",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.3"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "temporalio-protos",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "0.10.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "temporalio-common-wasm",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common/Cargo.toml",
+   "version": "1.1.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "chrono",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/common-wasm/Cargo.toml",
+   "version": "0.4"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "syn",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/macros/Cargo.toml",
+   "version": "3.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "tokio-util",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk/Cargo.toml",
+   "version": "0.7"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "tokio-stream",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk/Cargo.toml",
+   "version": "0.1"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "wasmtime",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk/Cargo.toml",
+   "version": "44"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "url",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk/Cargo.toml",
+   "version": "2.5"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "temporalio-workflow",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk/Cargo.toml",
+   "version": "1.1.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "temporalio-macros",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk/Cargo.toml",
+   "version": "1.1.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "serde_json",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk/Cargo.toml",
+   "version": "1"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "assert_matches",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk-core/Cargo.toml",
+   "version": "1.5"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "bimap",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk-core/Cargo.toml",
+   "version": "0.6.3"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "flate2",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk-core/Cargo.toml",
+   "version": "1.1"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "sysinfo",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk-core/Cargo.toml",
+   "version": "0.38"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "tar",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk-core/Cargo.toml",
+   "version": "0.4"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "zip",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk-core/Cargo.toml",
+   "version": "9.0"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "xz2",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/sdk-core-c-bridge/Cargo.toml",
+   "version": "0.1"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "rand",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/workflow/Cargo.toml",
+   "version": "0.10"
+  },
+  {
+   "ecosystem": "crates.io",
+   "name": "wit-bindgen",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/workflow/Cargo.toml",
+   "version": "0.62.0"
+  },
+  {
+   "ecosystem": "Go",
+   "name": "google.golang.org/protobuf",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/protos/protos/api_upstream/cmd/protoc-gen-nexus-rpc-yaml/go.mod",
+   "version": "1.36.1"
+  },
+  {
+   "ecosystem": "Go",
+   "name": "gopkg.in/yaml.v3",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/protos/protos/api_upstream/cmd/protoc-gen-nexus-rpc-yaml/go.mod",
+   "version": "3.0.1"
+  },
+  {
+   "ecosystem": "Go",
+   "name": "github.com/nexus-rpc/nexus-proto-annotations",
+   "source": ".venv/lib/python3.14/site-packages/temporalio/bridge/sdk-core/crates/protos/protos/api_upstream/cmd/protoc-gen-system-nexus-wit/go.mod",
+   "version": "0.0.0-20260330194009-e558d6edaf84"
+  },
+  {
    "ecosystem": "docker",
    "name": "rust",
    "source": "tools/scan/Dockerfile",
@@ -11,7 +359,7 @@
    "ecosystem": "docker",
    "name": "scratch",
    "source": "tools/scan/Dockerfile",
-   "version": "latest"
+   "version": ""
   }
  ],
  "products": []

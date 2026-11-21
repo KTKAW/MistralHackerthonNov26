@@ -197,3 +197,9 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 
 - run_local.sh
 - tools/scan/src/merge.rs
+
+## [2026-11-21] edit | fix feed queries: omit empty versions, skip unsupported ecosystems (OSV 400), crates.io->rust for GitHub (422); regenerate inventory (60 pkgs)
+
+- tools/scan/inventory.json
+- tools/scan/inventory.py
+- tools/scan/src/feeds.rs
