@@ -3,6 +3,7 @@
 kb-scan (tools/scan.py + tools/scan/) is the continuous polling swarm. It writes:
 
     tools/scan/out/latest.json        merged feed findings (all tiers)
+    tools/scan/out/latest-sync.json   the git drift report (kb-scan-sync/1)
     runs/<run_id>/triage.json         the triage handoff for a Le Chonk run
     runs/<run_id>/sim-triage.json     the adversarial simulator's feedback (UNTRUSTED)
 
@@ -50,6 +51,11 @@ def latest() -> dict:
     return _doc(scan_out_dir() / "latest.json")
 
 
+def sync_latest() -> dict:
+    """The engine's git drift report: tools/scan/out/latest-sync.json (kb-scan-sync/1)."""
+    return _doc(scan_out_dir() / "latest-sync.json")
+
+
 def triage_for_run(run_id: str, runs_root: str | Path | None = None) -> dict:
     """runs/<run_id>/triage.json: the engine's triage handoff for this run ({schema, run_id, tiers, ...})."""
     try:
@@ -66,6 +72,49 @@ def sim_triage_for_run(run_id: str, runs_root: str | Path | None = None) -> dict
     except ValueError:
         return {}
     return _doc(run_dir / "sim-triage.json")
+
+
+def triage_for_advisory(run_id: str, advisory_id: str = "", package: str = "", runs_root: str | Path | None = None) -> list[dict]:
+    """The run's triage.json findings that name this advisory's CVE or package (any tier).
+
+    Per-run triage lookup by advisory id; same matching rules as relevant_to_advisory().
+    Feed data, not verdicts."""
+    return relevant_to_advisory(triage_for_run(run_id, runs_root), advisory_id, package)
+
+
+def _str_list(doc: dict, key: str, max_items: int) -> list[str]:
+    raw = doc.get(key)
+    if not isinstance(raw, list):
+        return []
+    return [text(item, 200) for item in raw[:max_items] if isinstance(item, (str, int, float))]
+
+
+def drift_status(max_items: int = 20) -> dict:
+    """A small, sanitised drift view of latest-sync.json for status lines and reports.
+
+    {schema, generated_at, repo, remote, attention[], new_branches[], moved[], errors[], truncated}.
+    Untrusted input: size-capped parse, every string one-line and markup-free."""
+    doc = sync_latest()
+    branches = doc.get("branches")
+    moved = []
+    if isinstance(branches, list):
+        for branch in branches[:max_items]:
+            if isinstance(branch, dict) and branch.get("moved"):
+                moved.append(text(branch.get("name", "?"), 120))
+    attention = _str_list(doc, "attention", max_items)
+    new_branches = _str_list(doc, "new_branches", max_items)
+    errors = _str_list(doc, "errors", max_items)
+    return {
+        "schema": text(doc.get("schema", ""), 40),
+        "generated_at": text(doc.get("generated_at", ""), 40),
+        "repo": text(doc.get("repo", ""), 160),
+        "remote": text(doc.get("remote", ""), 40),
+        "attention": attention,
+        "new_branches": new_branches,
+        "moved": moved,
+        "errors": errors,
+        "truncated": len(attention) == max_items or len(new_branches) == max_items or len(moved) == max_items,
+    }
 
 
 def findings(doc: dict) -> list[dict]:

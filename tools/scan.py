@@ -5,7 +5,8 @@ Usage:
   python3 tools/scan.py scan   [--config FILE] [--inventory FILE] [--out report.json] [--allow-unsandboxed]
   python3 tools/scan.py sync   [--repo DIR] [--out sync.json] [--allow-unsandboxed]
   python3 tools/scan.py loop   [--config FILE] [--interval SECS] [--max-runs N] [--allow-unsandboxed]
-  python3 tools/scan.py swarm  [--config FILE] [--interval SECS] [--max-runs N] [--allow-unsandboxed]
+  python3 tools/scan.py swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR]
+                               [--run-id ID] [--runs-root DIR] [--allow-unsandboxed]
   python3 tools/scan.py report --json REPORT [--out advisories/scan-latest.md] [--watch SECS]
   python3 tools/scan.py brief  --json REPORT [--sync-json sync.json] [--out brief.txt] [--speak]
   python3 tools/scan.py audio-loop --json REPORT [--sync-json sync.json] [--interval 60] [--once] [--listen]
@@ -35,10 +36,16 @@ appended to tools/scan/out/audio-loop.log). `--once` does a single check; `--lis
 Tests can set KB_SCAN_SPEAK_STUB to a script that receives the spoken text on stdin instead of calling the API.
 
 `query` reads the live loopback API of a running `kb-scan serve` (health|latest|sync|findings|brief): it GETs
-http://127.0.0.1:<port>/<endpoint> (findings also takes ?tier=N via --tier), prints the body, exits 3 on a
-non-200 status, and sends `Authorization: Bearer` from the env var named by --token-env (default
-KB_SCAN_QUERY_TOKEN when set) without ever printing the token. `--speak` speaks the /brief body, or one alert
-per finding, via the same speak() helper.
+http://127.0.0.1:<port>/<endpoint> (findings also takes ?tier=N via --tier; without --tier it returns all
+findings, like /latest), prints the body, exits 3 on a non-200 status, and sends `Authorization: Bearer` from
+the env var named by --token-env (default KB_SCAN_QUERY_TOKEN when set) without ever printing the token.
+`--speak` speaks the /brief body, or one alert per finding, via the same speak() helper.
+
+`swarm` additionally writes the per-run triage handoff runs/<run_id>/triage.json into the Le Chonk runs root:
+--runs-root DIR, else $LE_CHONK_RUNS_ROOT (the same variable orchestrator/config.py uses), else <repo>/runs.
+--run-id defaults to "latest". kb-scan's own reports stay in its own out dir (--out-dir / config out_dir,
+default tools/scan/out) — the two roots are never mixed. See tools/scan/ORCHESTRATION.md "Le Chonk run
+handoff".
 
 The binary is resolved in order: $KB_SCAN_BIN, then tools/scan/target/x86_64-unknown-linux-musl/release/kb-scan,
 then `cargo build --release --target x86_64-unknown-linux-musl` (needs export PATH=$HOME/.cargo/bin:$PATH).
@@ -259,6 +266,23 @@ def out_dir_for(config_path: str | None) -> Path:
     return path if path.is_absolute() else ROOT / path
 
 
+# A run id becomes a folder name under the runs root (mirrors orchestrator/config.py check_name and the
+# engine's own swarm::valid_run_id), so it may hold nothing that moves up a path.
+_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
+
+
+def valid_run_id(run_id: str) -> bool:
+    return bool(_RUN_ID.match(run_id)) and ".." not in run_id
+
+
+def le_chonk_runs_root(runs_root: str | None = None) -> Path:
+    """The Le Chonk runs root for the triage handoff: --runs-root, else $LE_CHONK_RUNS_ROOT
+    (the same variable orchestrator/config.py reads), else <repo>/runs. Never kb-scan's own out dir."""
+    value = runs_root or os.environ.get("LE_CHONK_RUNS_ROOT") or "runs"
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
 # ---------------------------------------------------------------- sandboxing
 
 
@@ -295,8 +319,12 @@ def sandbox_command(
     config: str | None,
     out_file: str | None,
     allow_unsandboxed: bool,
+    extra_writable: list[Path] | None = None,
 ) -> list[str] | None:
-    """Wrap the engine invocation in the sandbox. Returns None (after printing why) when refusing to run unsandboxed."""
+    """Wrap the engine invocation in the sandbox. Returns None (after printing why) when refusing to run unsandboxed.
+
+    extra_writable: additional directories the engine may write (e.g. the Le Chonk run dir for the
+    triage.json handoff); each is created and bound writable alongside the out dir."""
     template = sandbox_template(config)
     sandbox_bin = shutil.which(template[0])
     if sandbox_bin is None:
@@ -315,7 +343,7 @@ def sandbox_command(
         print("Install bubblewrap (e.g. `apt install bubblewrap`) or pass --allow-unsandboxed for local debugging only.", file=sys.stderr)
         return None
     repo = str(ROOT)
-    extra_writable: list[Path] = []
+    extra_writable = list(extra_writable or [])
     if out_file:
         given = Path(out_file)
         extra_writable.append((given if given.is_absolute() else ROOT / given).parent)
@@ -350,6 +378,7 @@ def run_engine(
     allow_unsandboxed: bool = False,
     config: str | None = None,
     out_file: str | None = None,
+    extra_writable: list[Path] | None = None,
 ) -> int:
     """Run the engine, sandboxed when it touches the network. stdout carries only JSON; progress goes to stderr.
 
@@ -357,7 +386,7 @@ def run_engine(
     binary = resolve_binary()
     command = [str(binary), *argv]
     if network:
-        command = sandbox_command(binary, argv, config, out_file, allow_unsandboxed)
+        command = sandbox_command(binary, argv, config, out_file, allow_unsandboxed, extra_writable)
         if command is None:
             return 2
     if stream:
@@ -415,6 +444,21 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
 def cmd_swarm(args: argparse.Namespace) -> int:
     config = args.config or default_config()
+    run_id = args.run_id or "latest"
+    if not valid_run_id(run_id):
+        print(
+            f"refusing --run-id {run_id!r}: must match [A-Za-z0-9][A-Za-z0-9._-]{{0,80}} without '..' "
+            "(it becomes a folder name under the runs root)",
+            file=sys.stderr,
+        )
+        return 2
+    runs_root = le_chonk_runs_root(args.runs_root)
+    run_dir = runs_root / run_id
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        print(f"cannot create the Le Chonk run dir {run_dir}: {error}", file=sys.stderr)
+        return 2
     argv = ["swarm"]
     engine_config = engine_config_path(config)
     if engine_config:
@@ -425,8 +469,18 @@ def cmd_swarm(args: argparse.Namespace) -> int:
         argv += ["--max-runs", str(args.max_runs)]
     if args.out_dir:
         argv += ["--out-dir", args.out_dir]
+    # the triage handoff goes to the Le Chonk runs root, NOT kb-scan's own out dir
+    argv += ["--run-id", run_id, "--workflow-root", str(runs_root)]
+    print(
+        f"swarm will write the triage handoff to {run_dir / 'triage.json'} "
+        f"(runs root {runs_root}; kb-scan's own reports stay in its out dir)",
+        file=sys.stderr,
+    )
     print("streaming kb-scan swarm mode; stop with Ctrl-C", file=sys.stderr)
-    return run_engine(argv, stream=True, network=True, allow_unsandboxed=args.allow_unsandboxed, config=config)
+    return run_engine(
+        argv, stream=True, network=True, allow_unsandboxed=args.allow_unsandboxed,
+        config=config, extra_writable=[run_dir],
+    )
 
 
 def cmd_feeds(args: argparse.Namespace) -> int:
@@ -951,6 +1005,9 @@ def cmd_selftest(args: argparse.Namespace) -> int:
 
     check("clean() drops square brackets and collapses whitespace", clean(" [GHSA-1]  a\nb ") == "(GHSA-1) a b")
 
+    check("run ids are validated like folder names", valid_run_id("latest") and valid_run_id("run-2026.11_v2")
+          and not valid_run_id("../evil") and not valid_run_id("a..b") and not valid_run_id("a/b") and not valid_run_id(""))
+
     sample = {
         "schema": "kb-scan-report/1",
         "generated_at": "2026-11-21T12:00:00Z",
@@ -1228,11 +1285,13 @@ def main() -> int:
                       help="run without the bwrap sandbox (local debugging only; never in production)")
     loop.set_defaults(func=cmd_loop)
 
-    swarm = sub.add_parser("swarm", help="stream the engine's swarm mode (sandboxed, fail-closed)")
+    swarm = sub.add_parser("swarm", help="stream the engine's swarm mode (sandboxed, fail-closed); writes runs/<run_id>/triage.json into the Le Chonk runs root")
     swarm.add_argument("--config", help="config file (default: tools/scan/config.json, else config.example.json)")
     swarm.add_argument("--interval", type=int, help="seconds between cycles")
     swarm.add_argument("--max-runs", type=int, help="stop after this many cycles")
-    swarm.add_argument("--out-dir", help="where the swarm writes its reports")
+    swarm.add_argument("--out-dir", help="where the swarm writes its own reports (default: config out_dir, else tools/scan/out)")
+    swarm.add_argument("--run-id", help='workflow run id for the triage.json handoff (default "latest")')
+    swarm.add_argument("--runs-root", help="Le Chonk runs root for the triage handoff (default: $LE_CHONK_RUNS_ROOT, else <repo>/runs)")
     swarm.add_argument("--allow-unsandboxed", action="store_true",
                        help="run without the bwrap sandbox (local debugging only; never in production)")
     swarm.set_defaults(func=cmd_swarm)

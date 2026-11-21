@@ -43,7 +43,8 @@ USAGE:
                  [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME]
                  [--allow-unsandboxed]
   kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
-                 [--force] [--stop-file FILE] [--run-id ID] [--allow-unsandboxed]
+                 [--force] [--stop-file FILE] [--run-id ID] [--workflow-root DIR]
+                 [--allow-unsandboxed]
   kb-scan merge  [--out-dir DIR] [--out FILE] [--pretty]
   kb-scan serve  --out-dir DIR [--addr 127.0.0.1:8787] [--allow-non-localhost]
 
@@ -526,7 +527,7 @@ fn cmd_watch(args: &[String]) -> i32 {
 fn cmd_swarm(args: &[String]) -> i32 {
     let flags = match parse_flags(
         args,
-        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file", "run-id", "allow-unsandboxed"],
+        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file", "run-id", "workflow-root", "allow-unsandboxed"],
     ) {
         Ok(f) => f,
         Err(e) => {
@@ -558,6 +559,7 @@ fn cmd_swarm(args: &[String]) -> i32 {
         force: flags.bool("force"),
         stop_file: flags.get("stop-file").map(|s| s.to_string()),
         run_id: flags.get("run-id").map(|s| s.to_string()),
+        workflow_root: flags.get("workflow-root").map(|s| s.to_string()),
         allow_unsandboxed: flags.bool("allow-unsandboxed"),
     })
 }

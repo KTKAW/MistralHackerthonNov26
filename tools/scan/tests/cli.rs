@@ -408,6 +408,51 @@ fn sandbox_wrapper() -> String {
 }
 
 #[test]
+fn swarm_workflow_root_flag_overrides_config_and_run_id_is_validated() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
+    let dir = std::env::temp_dir().join(format!("kb-scan-it13-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let cfg_path = dir.join("config.json");
+    let inv_path = dir.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    // config points at <dir>/runs-config, the flag at <dir>/runs-flag: the flag must win
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"workflow_root\": {:?}, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}}}",
+            inv_path.to_str().unwrap(),
+            dir.join("runs-config").to_str().unwrap(),
+        ),
+    )
+    .unwrap();
+    let out = dir.join("out");
+    let flag_root = dir.join("runs-flag");
+    let o = Command::new(BIN)
+        .args([
+            "swarm", "--config", cfg_path.to_str().unwrap(), "--out-dir", out.to_str().unwrap(),
+            "--interval", "1", "--max-runs", "1", "--run-id", "flagrun", "--workflow-root", flag_root.to_str().unwrap(),
+            "--allow-unsandboxed",
+        ])
+        .output()
+        .unwrap();
+    let code = o.status.code().unwrap_or(-1);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
+    assert!(flag_root.join("flagrun").join("triage.json").exists(), "--workflow-root did not win");
+    assert!(!dir.join("runs-config").exists(), "config workflow_root should have been overridden");
+    // a run id that could move up a path is refused before anything is spawned
+    let o = Command::new(BIN)
+        .args([
+            "swarm", "--config", cfg_path.to_str().unwrap(), "--out-dir", out.to_str().unwrap(),
+            "--run-id", "../evil", "--allow-unsandboxed",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(2), "stderr={}", String::from_utf8_lossy(&o.stderr));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn swarm_without_sandbox_fails_closed() {
     let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it13-{}", std::process::id()));
@@ -655,7 +700,12 @@ fn serve_endpoints() {
     let (st, _, body) = http_req(&addr, "GET", "/findings?tier=2", &[]);
     assert_eq!(st, 200);
     assert!(body.contains("CVE-2026-1") && !body.contains("MAL-1") && !body.contains("GHSA-x"), "body: {}", body);
-    let (st, _, _) = http_req(&addr, "GET", "/findings", &[]);
+    // no tier parameter: the whole merged report, like /latest
+    let (st, _, body) = http_req(&addr, "GET", "/findings", &[]);
+    assert_eq!(st, 200);
+    assert!(body.contains("CVE-2026-1") && body.contains("MAL-1") && body.contains("GHSA-x"), "body: {}", body);
+    // a non-numeric tier is a 400
+    let (st, _, _) = http_req(&addr, "GET", "/findings?tier=abc", &[]);
     assert_eq!(st, 400);
     let (st, _, _) = http_req(&addr, "GET", "/nope", &[]);
     assert_eq!(st, 404);

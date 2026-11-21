@@ -164,3 +164,7 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - index.md
 - system.md
 - tools/ (11 files)
+
+## [2026-11-21] edit | plug kb-scan engine into the Le Chonk run lifecycle (handoff root, serve contract, bridge)
+
+- tools/ (11 files)

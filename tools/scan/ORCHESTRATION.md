@@ -70,7 +70,7 @@ kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max
 kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
                  [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME] [--allow-unsandboxed]
 kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
-                 [--force] [--stop-file FILE] [--run-id ID] [--allow-unsandboxed]
+                 [--force] [--stop-file FILE] [--run-id ID] [--workflow-root DIR] [--allow-unsandboxed]
 kb-scan merge  [--out-dir DIR] [--out FILE] [--pretty]
 kb-scan serve  --out-dir DIR [--addr 127.0.0.1:8787] [--allow-non-localhost]
 ```
@@ -146,7 +146,8 @@ Never merge, rebase or push from the engine — it only reports.
 python3 tools/scan.py scan   [--config FILE] [--inventory FILE] [--out report.json] [--allow-unsandboxed]
 python3 tools/scan.py sync   [--repo DIR] [--out sync.json] [--allow-unsandboxed]
 python3 tools/scan.py loop   [--config FILE] [--interval SECS] [--max-runs N]   # streams the engine's watch mode
-python3 tools/scan.py swarm  [--config FILE] [--interval SECS] [--max-runs N] [--run-id ID]
+python3 tools/scan.py swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR]
+                             [--run-id ID] [--runs-root DIR] [--allow-unsandboxed]
 python3 tools/scan.py report --json REPORT [--out advisories/scan-latest.md] [--watch SECS]
 python3 tools/scan.py brief  --json REPORT [--sync-json SYNC] [--out FILE] [--speak]
 python3 tools/scan.py audio-loop --json REPORT [--sync-json SYNC] [--interval 60] [--once] [--listen]
@@ -171,15 +172,27 @@ python3 tools/scan.py feeds
 Alongside the file handoff, the swarm can answer queries live:
 `kb-scan serve --out-dir DIR [--addr 127.0.0.1:8787]`. std `TcpListener` only, zero
 deps, read-only GET endpoints: `/health`, `/latest` (merged kb-scan-report/1),
-`/sync` (kb-scan-sync/1), `/findings?tier=N` (filtered), `/brief` (the ≤90-word
-spoken-brief text, rendered engine-side). Binds loopback only; a non-loopback addr
-is refused unless `--allow-non-localhost` is passed (local debugging only). If
-`KB_SCAN_QUERY_TOKEN` is set, requests need `Authorization: Bearer <token>`; the
-token is never logged or written. Responses are the JSON files' bytes with
-`Content-Type: application/json`; unknown path → 404; method other than GET → 405.
+`/sync` (kb-scan-sync/1), `/findings` (the whole merged report; `?tier=N` filters
+to tier N, a non-numeric tier is a 400), `/brief` (the ≤90-word spoken-brief text,
+rendered engine-side). Binds loopback only; a non-loopback addr is refused unless
+`--allow-non-localhost` is passed (local debugging only). If `KB_SCAN_QUERY_TOKEN`
+is set, requests need `Authorization: Bearer <token>`; the token is never logged or
+written. Responses are the JSON files' bytes with `Content-Type: application/json`
+(`/brief` is `text/plain`); unknown path → 404; method other than GET → 405.
 The main workflow, a harness `/loop` cron, or an agent can poll these on any
 schedule. `tools/scan.py` gains a thin `query` subcommand (health/latest/sync/
 findings/brief) that GETs the local endpoint and prints JSON.
+
+How this maps to the consumers on `integration/scan-engine-le-chonk`:
+
+- `web/app.py` `GET /scan/latest` is `orchestrator/kbscan.py` `summary(latest())` —
+  the sanitised, capped view of the same file `/latest` serves raw. The Rust GUI
+  should poll `serve` for live data and use the web endpoints (or the files) for
+  run-scoped, pre-sanitised views.
+- `web/app.py` `GET /runs/{run_id}/scan` is `summary(triage_for_run(run_id))` over
+  `runs/<run_id>/triage.json` (see the handoff contract below); `serve` deliberately
+  does not expose run dirs — a GUI reads that file through the same size-capped,
+  sanitising bridge.
 
 ## Voice briefings (Mistral Voxtral)
 
@@ -265,8 +278,10 @@ and all treating scan documents as untrusted input (size-capped parse, malformed
 one-line markup-free strings):
 
 - `orchestrator/kbscan.py` — the bridge. Reads `tools/scan/out/latest.json`,
-  `runs/<run_id>/triage.json`, `runs/<run_id>/sim-triage.json`; `summary()` for the web grid,
-  `relevant_to_advisory()` for report matching.
+  `tools/scan/out/latest-sync.json`, `runs/<run_id>/triage.json`,
+  `runs/<run_id>/sim-triage.json`; `summary()` for the web grid,
+  `relevant_to_advisory()` / `triage_for_advisory()` for per-advisory matching,
+  `drift_status()` for the latest-sync drift view.
 - `orchestrator/gate.py` — `_apply_sim_triage()`: applies the gate-sim-triage patch in code.
   A simulator gate-rule that a human has not reviewed downgrades every verdict naming that
   advisory to `needs_human` — the only change the gate may make.
@@ -277,6 +292,29 @@ one-line markup-free strings):
   for the grid. The GUI (Rust) should prefer `kb-scan serve` on 127.0.0.1 for live polling and
   use these endpoints for run-scoped views.
 - Tests: `orchestrator/tests/test_kbscan.py` (6 tests, no fleet needed).
+
+## Le Chonk run handoff (pinned contract)
+
+Two separate roots, never mixed:
+
+- **kb-scan's own out dir** (`config out_dir` / `--out-dir`, default `tools/scan/out`):
+  `latest.json`, `latest-sync.json`, timestamped `reports/`, `shards/`, locks. This is
+  what `kb-scan serve --out-dir` exposes on 127.0.0.1.
+- **The Le Chonk runs root** (`orchestrator/config.py` `runs_root()`:
+  `$LE_CHONK_RUNS_ROOT`, default `<repo>/runs`): the swarm writes exactly one file
+  there per cycle — `runs/<run_id>/triage.json`, an atomic copy of the merged
+  `kb-scan-report/1`. `run_id` comes from `kb-scan swarm --run-id` (default
+  `latest`) and must match `[A-Za-z0-9][A-Za-z0-9._-]{0,80}` without `..` (enforced
+  both by the wrapper and by the engine — it becomes a folder name).
+
+The wrapper `python3 tools/scan.py swarm [--run-id ID] [--runs-root DIR]` resolves
+the runs root as `--runs-root` → `$LE_CHONK_RUNS_ROOT` → `<repo>/runs`, creates
+`runs/<run_id>/`, and passes `--run-id` + `--workflow-root <absolute runs root>` to
+the engine. When the engine runs under bwrap the wrapper additionally binds that one
+run dir writable (the repo stays read-only); the engine's own out dir stays where the
+config puts it. `orchestrator/kbscan.py` reads the handoff back through
+`triage_for_run()` / `triage_for_advisory()` with the same untrusted-input rules as
+everything else (size-capped parse, malformed → ignored, sanitised one-line output).
 
 ## Explorer / verifier orchestration (the brain stays in Rust)
 
@@ -323,7 +361,8 @@ Behaviour per cycle:
 4. The supervisor additionally writes the triage report to
    `<workflow_root>/<run_id or "latest">/triage.json` (atomic) — that file is the
    handoff into the main `le_chonk_run` workflow (step 0 reads it; gate rules
-   unchanged; human approves).
+   unchanged; human approves). See "Le Chonk run handoff" below for the pinned
+   contract.
 
 Tests must use a **stub agent command** (a shell script that writes canned
 `results.json`/`verdicts.json`), never a real model call, and never a real secret.

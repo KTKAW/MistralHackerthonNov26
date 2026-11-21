@@ -3,7 +3,8 @@
 //!   /health            -> {"status":"ok"}
 //!   /latest            -> <out-dir>/latest.json bytes (kb-scan-report/1)
 //!   /sync              -> <out-dir>/latest-sync.json bytes (kb-scan-sync/1)
-//!   /findings?tier=N   -> latest.json with findings filtered to tier N
+//!   /findings          -> latest.json as-is (all tiers); /findings?tier=N filters to tier N
+//!                         (a non-numeric tier is a 400)
 //!   /brief             -> ≤90-word text/plain brief from latest.json + sync
 //! Unknown path or missing file -> 404; non-GET -> 405. If KB_SCAN_QUERY_TOKEN
 //! is set, requests need `Authorization: Bearer <token>` (never logged).
@@ -235,12 +236,24 @@ fn handle_conn(mut stream: TcpStream, out_dir: &Path, token: Option<&str>) {
             }
         },
         "/findings" => {
-            let tier = query
+            // ?tier=N filters; no tier parameter serves the whole merged report,
+            // so `tools/scan.py query findings` (no --tier) matches /latest.
+            let tier_param = query
                 .split('&')
                 .find_map(|kv| kv.split_once('=').filter(|(k, _)| *k == "tier").map(|(_, v)| v.to_string()));
-            match tier.and_then(|t| t.parse::<u64>().ok()) {
-                Some(t) => match read_file_capped(&out_dir.join("latest.json")) {
-                    Some(bytes) => {
+            let parsed = match &tier_param {
+                None => None,
+                Some(t) => match t.parse::<u64>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        let _ = json_response(&mut stream, "400 Bad Request", r#"{"error":"tier must be a non-negative integer"}"#);
+                        return;
+                    }
+                },
+            };
+            match read_file_capped(&out_dir.join("latest.json")) {
+                Some(bytes) => match parsed {
+                    Some(t) => {
                         let text = String::from_utf8_lossy(&bytes).into_owned();
                         match filter_tier(&text, t) {
                             Ok(filtered) => {
@@ -252,11 +265,11 @@ fn handle_conn(mut stream: TcpStream, out_dir: &Path, token: Option<&str>) {
                         }
                     }
                     None => {
-                        let _ = json_response(&mut stream, "404 Not Found", r#"{"error":"latest.json not found"}"#);
+                        let _ = respond(&mut stream, "200 OK", "application/json", &bytes);
                     }
                 },
                 None => {
-                    let _ = json_response(&mut stream, "400 Bad Request", r#"{"error":"usage: /findings?tier=N"}"#);
+                    let _ = json_response(&mut stream, "404 Not Found", r#"{"error":"latest.json not found"}"#);
                 }
             }
         }

@@ -32,6 +32,10 @@ pub struct SwarmArgs {
     pub stop_file: Option<String>,
     /// Workflow run id for the triage.json handoff; "latest" if not given.
     pub run_id: Option<String>,
+    /// Override for the config's workflow_root (the Le Chonk runs root,
+    /// e.g. from $LE_CHONK_RUNS_ROOT via the wrapper). Relative paths are
+    /// resolved against the current working directory.
+    pub workflow_root: Option<String>,
     /// Local-debugging bypass of the fail-closed sandbox gate (never in production).
     pub allow_unsandboxed: bool,
 }
@@ -95,6 +99,22 @@ fn backoff_secs(fail_count: u32) -> u64 {
     (1u64 << shift).min(BACKOFF_CAP_SECS)
 }
 
+/// A run id becomes a folder name under the workflow root, so it may hold
+/// nothing that moves up a path (mirrors orchestrator/config.py check_name).
+pub fn valid_run_id(id: &str) -> bool {
+    let bytes = id.as_bytes();
+    if bytes.is_empty() || bytes.len() > 81 {
+        return false;
+    }
+    if !bytes[0].is_ascii_alphanumeric() {
+        return false;
+    }
+    if id.contains("..") {
+        return false;
+    }
+    bytes.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'.' || *b == b'_' || *b == b'-')
+}
+
 /// Write the merged outputs atomically: latest.json, latest-sync.json,
 /// timestamped copies under reports/, and the triage handoff at
 /// <workflow_root>/<run>/triage.json (the file the main workflow's step 0
@@ -140,6 +160,9 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
     if let Some(o) = &args.out_dir {
         cfg.out_dir = o.clone();
     }
+    if let Some(w) = &args.workflow_root {
+        cfg.workflow_root = w.clone();
+    }
     let out_dir = PathBuf::from(&cfg.out_dir);
     let reports_dir = out_dir.join("reports");
     let shards_dir = out_dir.join("shards");
@@ -162,6 +185,10 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
 
     let shards = merge::shard_list(&cfg);
     let run_id = args.run_id.clone().unwrap_or_else(|| "latest".to_string());
+    if !valid_run_id(&run_id) {
+        eprintln!("kb-scan: refusing --run-id {:?}: must match [A-Za-z0-9][A-Za-z0-9._-]{{0,80}} without '..'", run_id);
+        return 2;
+    }
 
     // FAIL CLOSED: network shards (sync + feeds) must run under sandbox_cmd.
     let network_shards: Vec<String> = shards.iter().filter(|s| merge::is_network_shard(s)).cloned().collect();
@@ -330,6 +357,20 @@ fn reap_children(children: &mut HashMap<String, ChildProc>, interval: u64, any_e
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_id_validation_blocks_path_escape() {
+        assert!(valid_run_id("latest"));
+        assert!(valid_run_id("run-2026.11_v2"));
+        assert!(!valid_run_id(""));
+        assert!(!valid_run_id("../evil"));
+        assert!(!valid_run_id("a..b"));
+        assert!(!valid_run_id(".hidden"));
+        assert!(!valid_run_id("a/b"));
+        assert!(!valid_run_id("a b"));
+        assert!(!valid_run_id(&"x".repeat(82)));
+        assert!(valid_run_id(&"x".repeat(81)));
+    }
 
     #[test]
     fn backoff_is_capped_at_60s() {
