@@ -34,7 +34,10 @@ noted):
 ## Output contract
 
 Write `verdict.json` at the work-copy root (`../verdict.json` relative to your cwd) matching
-`../schema/verdict.schema.json` exactly. `proof` is a LIST of test IDs (e.g.
+`../schema/verdict.schema.json` exactly. **Write it as soon as you have reached a verdict
+decision (after stage 4, or after stage 6), then update it if later steps change anything** —
+do not leave it to the very end: if the run hits its time limit, a written verdict is still
+returned, an unwritten one is not. `proof` is a LIST of test IDs (e.g.
 `tests/test_proof.py::test_forged_token_rejected`), each of which must FAIL on the vulnerable
 version and PASS on the fixed version. Record test counts in `suite.before` / `suite.after`
 (`passed` / `failed`). Any timeout, budget exhaustion or failed rule → write `needs_human` with
