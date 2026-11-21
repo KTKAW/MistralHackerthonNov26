@@ -38,7 +38,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from orchestrator import config, events, kbscan, steps
+from orchestrator import config, events, history, kbscan, steps
 from orchestrator import gate as gate_checks
 from orchestrator import fetch_fleet
 from orchestrator.local import LOCAL, new_run_id
@@ -299,6 +299,24 @@ def get_events(run_id: str, after: int = 0) -> dict:
     _run_dir(run_id)
     found = events.read(run_id, max(0, after))
     return {"events": found, "next": found[-1]["n"] if found else max(0, after)}
+
+
+@app.get("/history")
+def get_history() -> dict:
+    """The read-only cross-run history index (runs/_index/history.json), rebuilt on demand.
+
+    Aggregates verdicts, gate/sim downgrades and breaches across all runs. Read-only over
+    run history; never writes back into any decision.
+    """
+    try:
+        index = history.rebuild(config.runs_root())
+    except Exception:
+        # fall back to the last index on disk, if any
+        try:
+            index = json.loads((config.runs_root() / "_index" / "history.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            index = {}
+    return {"history": index}
 
 
 @app.get("/scan/latest")

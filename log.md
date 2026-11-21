@@ -209,3 +209,5 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - tools/scan/agent-vibe.sh
 - tools/scan/config.json
 - tools/scan/simulate.py
+
+## [2026-11-21] edit | expose GET /history (cross-run index) in the web API
