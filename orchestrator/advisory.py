@@ -168,6 +168,10 @@ def check(raw: str) -> dict:
     # The model spells the package as the advisory does ("Authlib"). Requirements files and the
     # wheelhouse use the registry's normalised name, so every later comparison gets that one.
     facts["package"] = re.sub(r"[-_.]+", "-", facts["package"]).lower()
+    # ">=3.7.0 <4.6.3" and ">=0.4, <3.0.2" both mean two bounds. A version specifier joins them with a comma.
+    bounds = re.findall(r"(?:==|>=|<=|~=|!=|<|>)\s*[0-9A-Za-z.*+!-]+", facts["affected_range"])
+    if bounds:
+        facts["affected_range"] = ",".join(re.sub(r"\s+", "", bound) for bound in bounds)
     return facts
 
 

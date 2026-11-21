@@ -73,7 +73,7 @@ uv run pytest
 
 ### What was checked, and how
 
-- **76 tests pass** (`uv run pytest`, about 120 s), on the five-app fleet.
+- **83 tests pass** (`uv run pytest`, about 140 s), on the ten-app fleet.
 - **It ran on Mistral's hosted Workflows with the five-app fleet**, 21 November: the model read
   the advisory, the five activities started within 234 ms, and 21 s after the start the run was
   waiting for approval with five tiles: `auth-gateway` and `billing-api` affected, proven and
@@ -170,6 +170,39 @@ uv run pytest
     crash turned eight tiles to "needs a human". A second attempt only after a heartbeat
     timeout, on a wiped work copy, would let those repositories run again. Not done: it changes
     the brief's one-attempt rule, and `run_repo` would have to clear `src/` first.
+
+### Three fresh advisories and five more apps (21 November)
+
+The fleet grew from five apps to ten, and from one advisory to four. See `docs/FLEET.md`.
+
+- **Where the advisories came from.** GitHub's advisory database, reviewed `pip` advisories of low
+  and moderate severity published 1 to 21 November 2026: 72 rows. Three were chosen because each
+  can be shown with a harmless input and a test that does not depend on timing: Tornado
+  (CVE-2026-126347, low), Soup Sieve (CVE-2026-126193) and mail-parser (CVE-2026-129300).
+  Timing-based denial-of-service advisories were left out: a proof that measures time is flaky.
+- **Each was reproduced first**, on the old and the fixed version, before any app was written.
+- **Five apps were built**, each by a separate builder and then checked again on a clean copy:
+  an exposed and a not-exposed app for Tornado and for Soup Sieve, and a not-exposed app for
+  mail-parser (the package is pinned and nothing imports it).
+- **The sixth was not built.** The builder for `mail-intake`, the exposed mail-parser app, was
+  stopped by a safety check at its first command. So the mail-parser advisory has no exposed app.
+- **The stand-in now answers per advisory.** An answer belongs to the advisories it names. For
+  any other advisory the stand-in checks `requirements.txt` for the package: not listed means
+  "no reachable path found", with that as the reason; listed means it asks for a person.
+- **The reader normalises a version range** to comma-separated bounds. The live model wrote
+  `>=3.7.0 <4.6.3` and `>=0.4, <3.0.2`.
+
+Checked: the gate proved and fixed the Tornado and Soup Sieve flaws on the fetched apps (the
+proof exits 1 before and 0 after, the suite passes). Three runs on Mistral's hosted Workflows,
+each started by typing only the CVE identifier, ended with ten tiles each:
+
+| Typed | Affected, proven and fixed | Has the package, not exposed | Package not pinned | Draft pull request |
+|---|---|---|---|---|
+| `CVE-2026-126347` | `link-redirector` | `docs-portal` | 8 apps | on `link-redirector` |
+| `CVE-2026-126193` | `html-extractor` | `link-checker` | 8 apps | on `html-extractor` |
+| `CVE-2026-129300` | none | `ticket-mailer` | 9 apps | none |
+
+The Soup Sieve run took 136 s, most of it the one model call. The other two took 41 and 58 s.
 
 ### A pull request for each verified fix (21 November)
 

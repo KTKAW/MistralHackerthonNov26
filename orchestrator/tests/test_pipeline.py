@@ -22,6 +22,10 @@ def test_advisory_facts_are_accepted_plain_or_fenced():
     # The live model spelled the package as the advisory did. Later steps get the registry's spelling.
     assert advisory.check(json.dumps({**GOOD, "package": "Authlib"})) == GOOD
     assert advisory.check(json.dumps({**GOOD, "package": "Flask_SQLAlchemy"}))["package"] == "flask-sqlalchemy"
+    # The live model wrote ranges with and without a comma. One spelling goes on.
+    assert advisory.check(json.dumps({**GOOD, "affected_range": ">=3.7.0 <4.6.3"}))["affected_range"] == ">=3.7.0,<4.6.3"
+    assert advisory.check(json.dumps({**GOOD, "affected_range": ">=0.4, <3.0.2"}))["affected_range"] == ">=0.4,<3.0.2"
+    assert advisory.check(json.dumps({**GOOD, "affected_range": "< 6.6.1"}))["affected_range"] == "<6.6.1"
 
 
 @pytest.mark.parametrize("field, value", [

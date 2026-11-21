@@ -81,7 +81,7 @@ def test_the_stand_ins_answers_cite_lines_that_exist():
     from orchestrator.tests.conftest import FLEET
 
     answers = stub_agent.ground_truth()
-    assert sorted(answers) == ["auth-gateway", "billing-api", "profile-api", "session-service", "token-signer"]
+    assert len(answers) == 10 and all(answer["advisories"] and answer["package"] for answer in answers.values())
     for app, answer in answers.items():
         for step in answer["path"]:
             line = (FLEET / app / step["file"]).read_text().splitlines()[step["line"] - 1]
@@ -160,3 +160,58 @@ def test_a_repo_name_cannot_leave_the_run_folder(pipeline, run_id, repo):
     verdict["repo"] = repo
     result = gated(run_id, verdict)
     assert result["verdict"] == "needs_human" and result["gate"]["passed"] is False
+
+
+# ---------------------------------------------------------------- the three advisories from November 2026
+
+TORNADO = {"id": "CVE-2026-126347", "package": "tornado", "affected_range": "<6.6.1", "flawed_function": "tornado.web.RedirectHandler"}
+SOUPSIEVE = {"id": "CVE-2026-126193", "package": "soupsieve", "affected_range": ">=0.4,<3.0.2", "flawed_function": "CSSParser.parse_pseudo_open"}
+MAILPARSER = {"id": "CVE-2026-129300", "package": "mail-parser", "affected_range": ">=3.7.0,<4.6.3", "flawed_function": "mailparser.utils.receiveds_format"}
+
+
+def claim_for(run_id: str, repo: str, advisory: dict) -> dict:
+    """The stand-in's claim for `repo` in a run about `advisory`."""
+    config.run_dir(run_id).mkdir(parents=True, exist_ok=True)
+    (config.run_dir(run_id) / "advisory.json").write_text(json.dumps(advisory))
+    return claim(run_id, repo)
+
+
+@pytest.mark.parametrize("repo, advisory, target, proof", [
+    ("link-redirector", TORNADO, "6.6.1", "tests/test_proof_cve_2026_126347.py::LegacyRedirectStaysOnSiteTest::test_legacy_redirect_does_not_leave_site"),
+    ("html-extractor", SOUPSIEVE, "3.0.2", "tests/test_proof_cve_2026_126193.py::test_deeply_nested_selector_is_handled"),
+])
+def test_a_fresh_advisory_is_proven_and_fixed_on_the_app_that_is_exposed(pipeline, run_id, repo, advisory, target, proof):
+    result = gated(run_id, claim_for(run_id, repo, advisory))
+    assert result["verdict"] == "affected_fixed" and result["gate"]["passed"] is True, result["gate"]["rules"]
+    assert result["fix"] == {"kind": "upgrade", "target": target, "diff_file": None} and result["proof"] == [proof]
+    rules = result["gate"]["rules"]
+    assert f"{proof} exited 1" in rules["proof_fails_on_vulnerable"]["detail"]
+    assert f"{proof} exited 0" in rules["proof_passes_on_fixed"]["detail"]
+    assert rules["suite_passes_after_fix"]["passed"] is True
+    assert f"{advisory['package']}=={target}" in (config.run_dir(run_id) / repo / "src" / "requirements.txt").read_text()
+
+
+@pytest.mark.parametrize("repo, advisory, said", [
+    ("docs-portal", TORNADO, "No capture group starts a target"),
+    ("link-checker", SOUPSIEVE, "Every selector passed to select() and select_one() is a constant"),
+    ("ticket-mailer", MAILPARSER, "no file imports it"),
+])
+def test_the_app_that_has_the_package_but_is_not_exposed_is_left_alone(pipeline, run_id, repo, advisory, said):
+    result = gated(run_id, claim_for(run_id, repo, advisory))
+    assert result["verdict"] == "not_affected" and result["gate"]["passed"] is True and said in result["reason"]
+    assert not (config.run_dir(run_id) / repo / "gate").exists()  # nothing was run, nothing was changed
+
+
+def test_an_app_that_does_not_have_the_package_says_exactly_that(pipeline, run_id):
+    other = gated(run_id, claim_for(run_id, "auth-gateway", TORNADO))
+    assert other["verdict"] == "not_affected" and "requirements.txt does not list tornado" in other["reason"]
+    assert other["path"] == [{"file": "requirements.txt", "line": 1, "note": "tornado is not among the pinned packages"}]
+    back = gated(run_id + "b", claim(run_id + "b", "link-redirector"))  # the Authlib advisory, on a Tornado app
+    assert back["verdict"] == "not_affected" and "does not list authlib" in back["reason"]
+
+
+def test_the_stand_in_does_not_stretch_an_answer_to_another_advisory_for_the_same_package(pipeline, run_id):
+    earlier = {**TORNADO, "id": "CVE-2026-116578"}  # another Tornado advisory: the stand-in has no answer for it
+    verdict = claim_for(run_id, "link-redirector", earlier)
+    assert verdict["verdict"] == "needs_human" and "has no answer for this repository and this advisory" in verdict["reason"]
+    assert verdict["proof"] == [] and gated(run_id, verdict)["verdict"] == "needs_human"
