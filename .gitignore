@@ -10,3 +10,6 @@ __pycache__/
 # kb-scan engine build and run output
 tools/scan/target/
 tools/scan/out/
+
+# kb-scan run artifacts
+tools/scan/runs/
