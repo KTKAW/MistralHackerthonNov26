@@ -11,7 +11,7 @@ Usage:
       files changed since the last commit. Operations: init, ingest, lint, refresh, edit.
 
 Errors:
-  - a relative markdown link points at a file that does not exist
+  - a relative markdown link, or an embedded image, points at a file that does not exist
   - a page in sources/, concepts/, playbooks/ or advisories/ lacks required frontmatter, has a
     value outside the allowed set, or is not listed in index.md
   - two source notes share a URL
@@ -72,6 +72,7 @@ MONTHS = {m: i for i, m in enumerate("Jan Feb Mar Apr May Jun Jul Aug Sep Oct No
 
 LINK = re.compile(r"(?<!!)\[([^\]]*)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 LINK_FULL = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
+IMAGE = re.compile(r"!\[[^\]]*\]\(([^)\s]+)\)")
 SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.I)
 FENCE = re.compile(r"```.*?```", re.S)
 INLINE_CODE = re.compile(r"`[^`\n]*`")
@@ -396,6 +397,9 @@ def run_checks(args: argparse.Namespace, today: dt.date) -> tuple[Report, str]:
         for _, target in links[path]:
             if not target.exists():
                 report.error(path, f"broken link to {os.path.relpath(target, ROOT)}")
+        for raw in IMAGE.findall(INLINE_CODE.sub("", FENCE.sub("", pages[path][1]))):
+            if not SCHEME.match(raw) and not (path.parent / unquote(raw)).exists():
+                report.error(path, f"image not found: {raw}; diagrams are drawn by `python3 tools/diagrams.py`")
 
     by_folder = {name: {p for p in pages if p.parent == ROOT / name} for name in FOLDERS}
     sources, concepts, playbooks = by_folder["sources"], by_folder["concepts"], by_folder["playbooks"]
@@ -434,7 +438,7 @@ def changed_files() -> list[str]:
     except (OSError, subprocess.CalledProcessError):
         return []
     paths = [line[3:].split(" -> ")[-1].strip().strip('"') for line in out.splitlines()]
-    ours = set(FOLDERS) | {"tools"}
+    ours = set(FOLDERS) | {"tools", "diagrams"}
     return sorted(p for p in paths if p and p != "log.md" and ("/" not in p or p.split("/", 1)[0] in ours))
 
 

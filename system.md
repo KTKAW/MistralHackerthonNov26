@@ -16,6 +16,11 @@ When a serious vulnerability is announced in a library, a company has to answer 
 
 ## The system, with the knowledge base attached
 
+![Diagram of one run. A security engineer pastes an advisory into the web page; the worker on our machine runs intake, read advisory, triage, one sandboxed agent per repository, the gate and the report; the engineer approves the draft and submits it to the CRA Single Reporting Platform. Mistral hosts the coordinator and the model. Four knowledge-base pages link into the read-advisory, triage and report steps.](diagrams/system-1.png)
+
+<details>
+<summary>Diagram source (Mermaid)</summary>
+
 ```mermaid
 flowchart TB
     engineer(["Security engineer<br/>pastes the advisory"])
@@ -83,6 +88,8 @@ flowchart TB
     style kb fill:none,stroke:#1d4ed8,stroke-dasharray:6 4
 ```
 
+</details>
+
 How to read it: a run goes from top to bottom. The web page and the security engineer each appear twice, once at the start of a run and once at its end; each is one thing.
 
 - **Solid boxes** ran in the team's test on 21 November 2026: the workflow, three agents in parallel, and the shell sandbox. [System design, Nov 2026](sources/team-system-design.md)
@@ -100,6 +107,11 @@ How to read it: a run goes from top to bottom. The web page and the security eng
 Mistral hosts the coordinator, which keeps the run's history. The team's worker process connects out to it and runs every step on the team's own machine. [System design, Nov 2026](sources/team-system-design.md)
 
 ## One worker's run
+
+![Diagram of one worker's run: read, trace, then either not affected, or prove, fix and re-verify, ending in affected and proven or affected, proven and fixed. Every verdict passes the gate, which shows a tile or turns it into needs a human.](diagrams/system-2.png)
+
+<details>
+<summary>Diagram source (Mermaid)</summary>
 
 ```mermaid
 flowchart LR
@@ -131,6 +143,8 @@ flowchart LR
     gate -->|"a rule breaks"| human
     prove -.->|"proof never fails · time or budget runs out"| human
 ```
+
+</details>
 
 | Verdict | In `verdict.json` | Proof |
 |---|---|---|

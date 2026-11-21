@@ -18,6 +18,11 @@ The duty has applied since 11 September 2026, and its first deadline is 24 hours
 
 ## The clock
 
+![Timeline: become aware, early warning within 24 hours, full notification within 72 hours, corrective measure available, final report no later than 14 days after.](../diagrams/cra-reporting-clock-1.png)
+
+<details>
+<summary>Diagram source (Mermaid)</summary>
+
 ```mermaid
 flowchart LR
     aware(["Become aware<br/>actively exploited vulnerability<br/>in your product"])
@@ -30,6 +35,8 @@ flowchart LR
     notification --> measure
     measure --> final
 ```
+
+</details>
 
 | Step | Deadline |
 |---|---|

@@ -55,7 +55,8 @@ sources/       one note per source: our summary, the link, the read level
 raw/           local full-text captures (gitignored)
 log.md         what was added and changed, and when
 watchlist.md   publishers to re-check and open leads
-tools/         lint.py and kev.py, standard library only
+diagrams/      images drawn from the Mermaid blocks in the pages, generated
+tools/         lint.py, kev.py and diagrams.py, standard library only
 ```
 
 This is the LLM wiki pattern: sources, a wiki that agents own, and a schema file that tells them how to maintain it.

@@ -67,3 +67,17 @@ The team's project brief and architecture page, read in full at commit `c0211d4`
 - The diagrams were rendered locally with Mermaid 10.6.1 and looked at before this entry was written.
 - Found while checking the test flaw against the feeds: OSV lists 8 advisories for Authlib 1.8.0, and 2 of them are fixed only in 1.9.1; the flaw is not in CISA's catalog at version 2026.11.20. Both are recorded on `system.md` and in the advisory.
 - The links from the knowledge base into the system are a proposal by this knowledge base. They are not in the team's design.
+
+## [2026-11-21] edit | Diagram images beside the Mermaid sources
+
+- AGENTS.md
+- README.md
+- system.md
+- concepts/cra-reporting-clock.md
+- diagrams/cra-reporting-clock-1.png
+- diagrams/system-1.png
+- diagrams/system-2.png
+- tools/diagrams.py
+- tools/lint.py
+
+GitHub draws the Mermaid blocks, but its built-in view of the large system diagram is cramped. Each diagram is now also an image in `diagrams/`, drawn by `tools/diagrams.py`, with the Mermaid source kept in the page under it. The lint fails when an embedded image is missing.
