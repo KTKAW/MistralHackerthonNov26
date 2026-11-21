@@ -7,7 +7,7 @@ Built at "Le Chonk in London", the Mistral Vibe hackathon, on 21 November 2026.
 ![The page after a run on the eleven demo apps: two affected and fixed, eight with no reachable path found, one for a person](docs/img/grid.png)
 
 > [!NOTE]
-> **Status on this branch, 21 November 2026.** The workflow, the advisory reader, the gate, the draft pull requests, the report and the page all run for real. The per-repository agent (Vibe in a sandbox) is on this branch in `worker/` and `sandbox/`, built from the design and tested up to the model call. It has not yet run with a model, on one repository or across the fleet. Every run so far used a stand-in that reads its answers from a file, and the page says so in the red banner above. See [What is real today](#what-is-real-today).
+> **Status on this branch, 21 November 2026.** The workflow, the advisory reader, the gate, the draft pull requests, the report and the page all run for real. The per-repository agent (Vibe in a sandbox) is on this branch in `worker/` and `sandbox/`, built from the design. It has run with a model once, on one repository: on `billing-api` it found the hidden route, proved it and fixed it in 133 s, and the gate accepted the result inside the sandbox. It has not run across the fleet. The runs behind the screenshots and the measurements below used a stand-in that reads its answers from a file, and the page says so in the red banner above. See [What is real today](#what-is-real-today).
 
 ## The problem
 
@@ -105,7 +105,7 @@ To show the gate catching a false claim, start the local run with `LE_CHONK_STUB
 |---|---|---|
 | **Mistral Workflows** (`mistralai-workflows` 3.20.0) | The whole run is one workflow, `le_chonk_run`, with seven activities. Mistral hosts the coordinator and our worker runs every step on our own machine. It gives the parallel fan-out, the pause for a person's `approve` signal, and a run that outlives a worker crash | Ran on the hosted service |
 | **Large 4** (`mistral-large-4-0`) | Reads the advisory into four checked facts | Live |
-| **Vibe 3.1.3, headless, in a sandbox** | The per-repository agent | `worker/` and `sandbox/` on this branch, tested without a model. Not yet run with one |
+| **Vibe 3.1.3, headless, in a sandbox** | The per-repository agent | `worker/` and `sandbox/` on this branch. One real run, on `billing-api`: 133 s, 22 steps, $0.06, all 18 shell commands sandboxed. Not yet run across the fleet |
 
 Every step runs on our own machine, so the repositories, the tests and the fixes stay there. What reaches Mistral is the model calls and the workflow's own record of each step, which includes the verdicts. The plain-Python orchestrator in `orchestrator/local.py` keeps that record local too. The tool's only other outbound requests are the OSV lookup, which sends the identifier alone, and the draft pull requests, which are off unless switched on.
 

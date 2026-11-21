@@ -508,9 +508,8 @@ Checked, all without a model:
   library check. A worker that edited its installed library went to a person on that rule alone.
 - **191 tests pass in all.**
 
-Not checked: anything a model does. There was no Mistral key on the machine this was written on,
-so no agent has read a repository, written a proof or finished inside the 560 seconds. Also not
-checked: ten agents at once, and the web connector tools with a key present.
+When this section was written no model had run: there was no Mistral key on the machine. One
+real agent ran later the same day. See "One real agent" below.
 
 To run one real agent by hand, with a key in the environment. `runs/<run id>/advisory.json` must
 hold the five facts first; starting a run from the page writes it.
@@ -519,3 +518,29 @@ hold the five facts first; starting a run from the page writes it.
 uv run python -m worker.setup_vibe_home
 uv run python -m worker.run_repo <run id> <repository> --fleet-root runs/_fleet
 ```
+
+### One real agent (21 November, evening)
+
+One run, one repository, with a Mistral key in the process's environment for that run only.
+Nothing was stood in: the live model read the advisory, a real Vibe agent worked in the sandbox,
+and the gate re-ran its claim with no waiver.
+
+| Step | What happened |
+|---|---|
+| Advisory | `CVE-2026-96760` typed alone. Looked up at OSV, then one call to `mistral-large-4-0`: 28.0 s. It returned all five facts, the fixed version `1.9.0` among them |
+| Agent | `billing-api`, the app with the hidden route. 133 s, 22 steps, 417,802 tokens, $0.06. Exit code 0, a valid `verdict.json` |
+| Sandbox | 18 shell commands, all 18 through `sandbox/douane`. 5 file-tool calls, all inside `src/`, `proof/` and `verdict.json`. No call was refused |
+| Verdict | `affected_fixed`. Path cited: `app.py:83` (the route depends on `current_customer`), `security.py:52`, `security.py:45` (`verify_bearer` calls `deserialize`), then `jws.py:255` and `jws.py:170` in the installed library |
+| Proof | `proof/test_cve_2026_96760.py`: a token with an empty `signatures` list sent to `POST /charge` must get a 401 |
+| Fix | The pin in `src/requirements.txt` changed from `authlib==1.8.0` to `authlib==1.9.0`. Nothing else in `src/` changed |
+| Gate | 8.8 s, twelve rules, all passed, with its test runs under `sandbox-exec`. The proof exited 1 on the vulnerable baseline and 0 on the fixed one. 9 passed / 0 failed on both baselines. The worker's `venv/` matched the 1.9.0 wheel |
+
+The verdict and the route agree with the answer kept with the tests for this app. The agent
+could not read that answer: the sandbox and the path hook deny it.
+
+The agent wrote its verdict 60 s in, before fixing, as the prompt asks, and updated it twice.
+It also reported three other findings as follow-ups. Nobody has checked those.
+
+Still not checked: the other ten apps, a "not affected" verdict from a real agent (the design
+notes it as the slowest case), a case that should go to a person, ten agents at once, and a run
+on Mistral's hosted Workflows with this contract.
