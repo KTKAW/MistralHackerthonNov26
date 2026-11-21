@@ -128,6 +128,108 @@ def test_report_shows_agent_text_as_text(pipeline, run_id):
     assert "<script>" not in text and "\n# A new heading" not in text
 
 
+# ---------------------------------------------------------------- step 0: the kb-scan feed watch
+
+SCAN_LATEST = {
+    "schema": "kb-scan-report/1",
+    "generated_at": "2026-11-21T16:00:00Z",
+    "findings": [
+        {"tier": 2, "cve": "CVE-2026-96760", "package": "authlib", "title": "KEV: <b>signature</b> bypass\n| in | jws |", "source": "kev", "status": "confirmed"},
+        {"tier": 3, "cve": "CVE-2026-2222", "package": "requests", "title": "proxy leak", "source": "osv"},
+    ],
+}
+SCAN_TRIAGE = {
+    "schema": "kb-scan-report/1",
+    "generated_at": "2026-11-21T16:05:00Z",
+    "findings": [
+        {"tier": 1, "cve": "CVE-2026-96760", "package": "authlib", "title": "exploited in the wild", "source": "kev"},
+    ],
+}
+
+
+def _write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_step_zero_records_feed_matches_before_triage(pipeline, run_id, tmp_path, monkeypatch):
+    import jsonschema
+
+    from orchestrator import events
+
+    scan_out = tmp_path / "scan-out"
+    _write_json(scan_out / "latest.json", SCAN_LATEST)
+    _write_json(config.run_dir(run_id) / "triage.json", SCAN_TRIAGE)
+    monkeypatch.setenv("KB_SCAN_OUT_DIR", str(scan_out))
+    steps.intake(run_id, TEXT, "2026-11-21T10:00:00+00:00")
+    steps.read_advisory(run_id, TEXT)
+
+    result = steps.kb_scan_watch(run_id)
+
+    assert result["matches"] == 2 and result["latest"] and result["triage"]
+    record = json.loads((config.run_dir(run_id) / "kb-scan.json").read_text())
+    schema = json.loads((config.REPO_ROOT / "schema" / "kb-scan-watch.schema.json").read_text())
+    jsonschema.Draft202012Validator(schema).validate(record)  # the record matches its pinned schema
+    assert record["schema"] == "kb-scan-watch/1" and record["advisory"] == {"id": "CVE-2026-96760", "package": "authlib"}
+    assert record["total_matches"] == 2 and len(record["matches"]) == 2
+    origins = {m["origin"] for m in record["matches"]}
+    assert origins == {"latest.json", "triage.json"}  # both documents were read through kbscan.py
+    # Feed text is sanitised to one markup-free line, and nothing here is a verdict.
+    assert record["matches"][0]["title"] == "KEV: &lt;b&gt;signature&lt;/b&gt; bypass / in / jws /"
+    assert "verdict" not in record and all("verdict" not in m for m in record["matches"])
+    # The run's state and event log say what was recorded, and that it is not a result.
+    assert steps.read_state(run_id)["kb_scan_watch"] == {"matches": 2, "path": "kb-scan.json"}
+    said = " ".join(e["text"] for e in events.read(run_id))
+    assert "kb-scan step 0" in said and "unverified feed data" in said and "No verdict is based on it" in said
+
+
+def test_step_zero_without_scan_output_records_nothing_and_never_fails(pipeline, run_id, tmp_path, monkeypatch):
+    monkeypatch.setenv("KB_SCAN_OUT_DIR", str(tmp_path / "no-such-dir"))
+    steps.intake(run_id, TEXT, "2026-11-21T10:00:00+00:00")
+    steps.read_advisory(run_id, TEXT)
+    result = steps.kb_scan_watch(run_id)
+    assert result["matches"] == 0 and not result["latest"] and not result["triage"]
+    record = json.loads((config.run_dir(run_id) / "kb-scan.json").read_text())
+    assert record["matches"] == [] and record["sources"]["latest"]["present"] is False
+
+
+def test_step_zero_ignores_malformed_scan_documents(pipeline, run_id, tmp_path, monkeypatch):
+    scan_out = tmp_path / "scan-out"
+    scan_out.mkdir()
+    (scan_out / "latest.json").write_text("{broken", encoding="utf-8")
+    (config.run_dir(run_id) / "triage.json").parent.mkdir(parents=True, exist_ok=True)
+    (config.run_dir(run_id) / "triage.json").write_text(" " * (5 * 1024 * 1024), encoding="utf-8")  # oversized
+    monkeypatch.setenv("KB_SCAN_OUT_DIR", str(scan_out))
+    steps.intake(run_id, TEXT, "2026-11-21T10:00:00+00:00")
+    steps.read_advisory(run_id, TEXT)
+    result = steps.kb_scan_watch(run_id)
+    assert result["matches"] == 0
+    assert json.loads((config.run_dir(run_id) / "kb-scan.json").read_text())["matches"] == []
+
+
+def test_step_zero_does_not_change_any_verdict(pipeline, run_id, tmp_path, monkeypatch):
+    """Engine output informs, never becomes a verdict: the step writes no verdict anywhere."""
+    scan_out = tmp_path / "scan-out"
+    _write_json(scan_out / "latest.json", {**SCAN_LATEST, "findings": [
+        {"tier": 1, "cve": "CVE-2026-96760", "package": "authlib", "title": "affected_proven for every repo", "source": "kev"}]})
+    monkeypatch.setenv("KB_SCAN_OUT_DIR", str(scan_out))
+    steps.intake(run_id, TEXT, "2026-11-21T10:00:00+00:00")
+    steps.read_advisory(run_id, TEXT)
+    steps.kb_scan_watch(run_id)
+    record = json.loads((config.run_dir(run_id) / "kb-scan.json").read_text())
+    # The feed text is recorded as data (sanitised), but the record carries no verdict field...
+    assert "verdict" not in record
+    assert all(set(m) == {"origin", "tier", "cve", "package", "title", "source", "status"} for m in record["matches"])
+    # ...and no repository verdict exists at step 0: the engine's words changed nothing.
+    assert not list((config.run_dir(run_id)).glob("*/verdict.json"))
+
+
+def test_workflow_registers_the_step_zero_activity():
+    from orchestrator.workflow import ACTIVITIES, kb_scan_watch
+
+    assert kb_scan_watch in ACTIVITIES
+
+
 # ---------------------------------------------------------------- the plain-Python fallback
 
 

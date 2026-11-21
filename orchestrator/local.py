@@ -69,6 +69,7 @@ class LocalOrchestrator:
     def _run(self, run_id: str, advisory_text: str, repos: list[str], pull_requests: bool = False) -> None:
         try:
             steps.read_advisory(run_id, advisory_text)
+            steps.kb_scan_watch(run_id)  # step 0, same as the workflow: feed matches recorded before triage
             with ThreadPoolExecutor(max_workers=max(1, min(self.max_parallel, len(repos) or 1))) as pool:
                 gated = list(pool.map(lambda repo: self._one_repo(run_id, repo, pull_requests), repos))
             steps.write_report(run_id, gated)

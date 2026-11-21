@@ -179,8 +179,23 @@ def _feed_watch_section(run_id: str, advisory: dict, runs_root: str | Path) -> l
         )
     if len(hits) > 10:
         lines.append(f"- … and {len(hits) - 10} more in `tools/scan/out/latest.json`.")
+    recorded = _kb_scan_watch_record(run_id, runs_root)
+    if isinstance(recorded.get("matches"), list):
+        lines.append(f"- Step 0 recorded {len(recorded['matches'])} of these match(es) before any triage, in `kb-scan.json`. Same unverified feed data.")
     lines.append("")
     return lines
+
+
+def _kb_scan_watch_record(run_id: str, runs_root: str | Path) -> dict:
+    """The run-scoped step-0 record (runs/<run_id>/kb-scan.json), read size-capped. Malformed -> {}."""
+    try:
+        path = config.run_dir(run_id, runs_root) / "kb-scan.json"
+        if path.stat().st_size > kbscan.MAX_BYTES:
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _pull_request_line(verdict: dict) -> list[str]:

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://le-chonk.dev/schema/kb-scan-watch.schema.json",
+  "title": "kb-scan-watch",
+  "description": "Step 0 of a le_chonk_run: which kb-scan feed findings name the run's advisory, recorded in runs/<run_id>/kb-scan.json before any triage. Untrusted feed data — never a verdict; gate rules are unchanged.",
+  "type": "object",
+  "required": ["schema", "run_id", "recorded_at", "advisory", "untrusted", "sources", "matches", "total_matches"],
+  "properties": {
+    "schema": { "const": "kb-scan-watch/1" },
+    "run_id": { "type": "string" },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "advisory": {
+      "type": "object",
+      "required": ["id", "package"],
+      "properties": {
+        "id": { "type": "string" },
+        "package": { "type": "string" }
+      }
+    },
+    "untrusted": { "type": "string", "description": "Standing notice that the record is feed data, not a verdict." },
+    "sources": {
+      "type": "object",
+      "properties": {
+        "latest": { "$ref": "#/$defs/source" },
+        "triage": { "$ref": "#/$defs/source" }
+      }
+    },
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["origin", "tier", "cve", "package", "title", "source", "status"],
+        "properties": {
+          "origin": { "enum": ["latest.json", "triage.json"] },
+          "tier": { "type": "string" },
+          "cve": { "type": "string" },
+          "package": { "type": "string" },
+          "title": { "type": "string", "description": "one line, sanitised" },
+          "source": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      }
+    },
+    "total_matches": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["present", "generated_at"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "generated_at": { "type": "string" }
+      }
+    }
+  }
+}

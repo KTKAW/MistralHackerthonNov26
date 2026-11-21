@@ -144,3 +144,11 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 ## [2026-11-21] edit | integrate kb-scan with Le Chonk track-c-v2: kbscan bridge, gate sim-triage downgrade, report feed-watch, web /scan endpoints
 
 - tools/scan/ORCHESTRATION.md
+
+## [2026-11-21] edit | Wire kb-scan step 0 into le_chonk_run (feed matches recorded before triage)
+
+- tools/scan.py
+- tools/scan/src/main.rs
+- tools/scan/src/serve.rs
+- tools/scan/src/swarm.rs
+- tools/scan/tests/cli.rs

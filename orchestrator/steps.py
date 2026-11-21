@@ -4,7 +4,8 @@ Both orchestrators call these: the Mistral Workflows workflow (workflow.py), whe
 an activity, and the plain-Python fallback (local.py). All file and network work of a run is in
 here, so the workflow code itself stays deterministic.
 
-    intake -> read_advisory -> triage_repo + verify_repo for each repository -> write_report
+    intake -> read_advisory -> kb_scan_watch (step 0: feed matches, recorded before triage)
+    -> triage_repo + verify_repo for each repository -> write_report
     -> (wait for a person) -> close_run
 
 runs/<run_id>/run.json is the run's public state. The web grid reads it.
@@ -21,13 +22,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator import advisory as advisory_reader
-from orchestrator import config, events, pull_request
+from orchestrator import config, events, kbscan, pull_request
 from orchestrator.gate import gate
 from orchestrator.report import render_early_warning
 
 _state_lock = threading.Lock()
 VERDICTS = ("not_affected", "affected_proven", "affected_fixed", "needs_human")
 MAX_WORKER_EVENTS = 300  # per repository: a worker cannot flood the log
+MAX_KB_SCAN_MATCHES = 50  # feed findings recorded per run: a feed cannot flood the record
 
 
 # ---------------------------------------------------------------- run state
@@ -105,6 +107,72 @@ def read_advisory(run_id: str, advisory_text: str) -> dict:
                 f"Advisory read in {time.monotonic() - started:.1f} s: {facts['id']} in {facts['package']} {facts['affected_range']}, "
                 f"flawed function {facts['flawed_function']}. One worker per repository starts now.", kind="ok")
     return facts
+
+
+def kb_scan_watch(run_id: str) -> dict:
+    """Step 0, before any triage: record which kb-scan feed findings name this run's advisory.
+
+    Reads the engine's merged scan (tools/scan/out/latest.json) and this run's triage handoff
+    (runs/<run_id>/triage.json) through orchestrator/kbscan.py, and writes the matches to
+    runs/<run_id>/kb-scan.json (schema kb-scan-watch/1, see schema/kb-scan-watch.schema.json).
+
+    Engine output is untrusted feed data: it informs, it never becomes a verdict. This step
+    changes no verdict and no gate rule — the only effect scan data can have on a verdict is
+    the gate's own downgrade to "needs_human" (gate.py, unchanged). A missing, malformed or
+    oversized scan document simply records no matches; this step never fails the run.
+    """
+    try:
+        facts = read_state(run_id).get("advisory") or {}
+        advisory_id = str(facts.get("id", ""))
+        package = str(facts.get("package", ""))
+        latest_doc = kbscan.latest()
+        triage_doc = kbscan.triage_for_run(run_id, config.runs_root())
+        latest_hits = kbscan.relevant_to_advisory(latest_doc, advisory_id, package)
+        triage_hits = [f for f in kbscan.relevant_to_advisory(triage_doc, advisory_id, package) if f not in latest_hits]
+        hits = latest_hits + triage_hits
+        matches = ([_kb_scan_match(finding, "latest.json") for finding in latest_hits]
+                   + [_kb_scan_match(finding, "triage.json") for finding in triage_hits])[:MAX_KB_SCAN_MATCHES]
+        record = {
+            "schema": "kb-scan-watch/1",
+            "run_id": config.check_name(run_id, "run id"),
+            "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "advisory": {"id": kbscan.text(advisory_id, 40), "package": kbscan.text(package, 80)},
+            "untrusted": "feed data from the kb-scan engine; recorded before triage; not a verdict; the gate's rules are unchanged",
+            "sources": {
+                "latest": {"present": bool(latest_doc), "generated_at": kbscan.text(latest_doc.get("generated_at", ""), 40)},
+                "triage": {"present": bool(triage_doc), "generated_at": kbscan.text(triage_doc.get("generated_at", ""), 40)},
+            },
+            "matches": matches,
+            "total_matches": len(hits),
+        }
+        run_dir = config.run_dir(run_id)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        temporary = run_dir / f"kb-scan.json.{threading.get_ident()}.tmp"
+        temporary.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(temporary, run_dir / "kb-scan.json")
+        update_state(run_id, kb_scan_watch={"matches": len(hits), "path": "kb-scan.json"})
+        events.emit(run_id, "orchestrator",
+                    f"kb-scan step 0: {len(hits)} feed finding(s) in the engine's latest scan or this run's triage handoff name "
+                    f"{kbscan.text(advisory_id, 40) or 'this advisory'} / {kbscan.text(package, 80)}. Recorded in kb-scan.json before any triage, "
+                    "as unverified feed data. No verdict is based on it.", kind="ok")
+        return {"path": str(run_dir / "kb-scan.json"), "matches": len(hits),
+                "latest": bool(latest_doc), "triage": bool(triage_doc)}
+    except Exception as error:
+        events.emit(run_id, "orchestrator", f"kb-scan step 0 could not record feed matches: {type(error).__name__}. Continuing without them.", kind="fail")
+        return {"path": None, "matches": 0, "error": type(error).__name__}
+
+
+def _kb_scan_match(finding: dict, origin: str) -> dict:
+    """One feed finding as a sanitised, one-line record. Feed text is untrusted; kbscan.text() cleans it."""
+    return {
+        "origin": origin,
+        "tier": kbscan.text(finding.get("tier", "?"), 8),
+        "cve": kbscan.text(finding.get("cve", finding.get("id", "")), 40),
+        "package": kbscan.text(finding.get("package", ""), 80),
+        "title": kbscan.text(finding.get("title", finding.get("summary", "")), 140),
+        "source": kbscan.text(finding.get("source", ""), 60),
+        "status": kbscan.text(finding.get("status", ""), 40),
+    }
 
 
 def triage_repo(run_id: str, repo: str, heartbeat_fn: Callable[..., None] | None = None) -> dict:

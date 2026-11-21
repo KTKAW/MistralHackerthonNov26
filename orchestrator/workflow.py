@@ -2,6 +2,7 @@
 
     intake (the 24-hour clock starts)
     -> read advisory (exactly one model call)
+    -> kb-scan step 0: record the feed findings that match the advisory (untrusted data, never a verdict)
     -> for every repository at once: triage (one agent, one attempt) then the gate
     -> report (a draft, from gated verdicts only)
     -> wait for a person's "approve" signal, for at most 24 hours
@@ -87,6 +88,17 @@ async def read_advisory(run_id: str, advisory_text: str) -> dict:
     return await asyncio.to_thread(steps.read_advisory, run_id, advisory_text)
 
 
+@workflows.activity(name="le_chonk_kb_scan_watch", start_to_close_timeout=QUICK, retry_policy_max_attempts=3)
+async def kb_scan_watch(run_id: str) -> dict:
+    """Step 0, before any triage: record which kb-scan feed findings name this advisory.
+
+    Engine output is untrusted feed data: it is recorded as context in runs/<run_id>/kb-scan.json
+    and never becomes a verdict. The gate's rules are unchanged; the only downgrade scan data can
+    cause is to "needs_human" inside the gate. Local files only, so it is quick and heartbeats.
+    """
+    return await _in_thread(steps.kb_scan_watch, run_id)
+
+
 @workflows.activity(name="le_chonk_triage_repo", start_to_close_timeout=LONG, heartbeat_timeout=BEAT, retry_policy_max_attempts=1)
 async def triage_repo(run_id: str, repo: str) -> dict:
     """One agent on a fresh work copy. One attempt: a retry would run on a half-changed copy."""
@@ -115,7 +127,7 @@ async def close_run(run_id: str, outcome: str, approved_by: str) -> dict:
     return await asyncio.to_thread(steps.close_run, run_id, outcome, approved_by)
 
 
-ACTIVITIES = [intake, read_advisory, triage_repo, verify_repo, open_pull_request, write_report, close_run]
+ACTIVITIES = [intake, read_advisory, kb_scan_watch, triage_repo, verify_repo, open_pull_request, write_report, close_run]
 
 
 # ---------------------------------------------------------------- the workflow
@@ -155,6 +167,9 @@ class LeChonkRun:
 
         self._stage = "reading_advisory"
         await read_advisory(run_id, advisory_text)
+
+        self._stage = "kb_scan_watch"
+        await kb_scan_watch(run_id)
 
         self._stage = "triage"
         gated = list(await asyncio.gather(*[self._one_repo(run_id, repo) for repo in meta["repos"]]))
