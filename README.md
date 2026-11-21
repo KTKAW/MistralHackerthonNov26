@@ -7,7 +7,7 @@ Built at "Le Chonk in London", the Mistral Vibe hackathon, on 21 November 2026.
 ![The page after a run on the eleven demo apps: two affected and fixed, eight with no reachable path found, one for a person](docs/img/grid.png)
 
 > [!NOTE]
-> **Status on this branch, 21 November 2026.** The workflow, the advisory reader, the gate, the draft pull requests, the report and the page all run for real. The per-repository agent (Vibe in a sandbox) is on this branch in `worker/` and `sandbox/`, built from the design. It has run with a model once, on one repository: on `billing-api` it found the hidden route, proved it and fixed it in 133 s, and the gate accepted the result inside the sandbox. It has not run across the fleet. The runs behind the screenshots and the measurements below used a stand-in that reads its answers from a file, and the page says so in the red banner above. See [What is real today](#what-is-real-today).
+> **Status on this branch, 21 November 2026.** The workflow, the advisory reader, the gate, the draft pull requests, the report and the page all run for real. The per-repository agent (Vibe in a sandbox) is on this branch in `worker/` and `sandbox/`, built from the design. It has run with a model once, on one repository: on `billing-api` it found the hidden route, proved it and fixed it in 133 s, and the gate accepted the result inside the sandbox. It has not run across the fleet. The runs behind the screenshots and the measurements below used a stand-in that reads its answers from a file. See [What is real today](#what-is-real-today).
 
 ## The problem
 
@@ -134,7 +134,7 @@ How each number was taken, and what was not checked, is in [docs/BUILD-LOG.md](d
 
 **A stand-in**
 
-- **The per-repository agent, in every run so far.** With `LE_CHONK_RUN_REPO=orchestrator.stub_agent:run_repo` each "agent" looks its answer up in `orchestrator/stub_answers.json`. The page and the pull requests both say so. Without that variable a run starts the real worker, `worker.run_repo:run_repo`, which needs a Vibe home and a Mistral key: see [docs/AGENT.md](docs/AGENT.md).
+- **The per-repository agent, in every run so far.** With `LE_CHONK_RUN_REPO=orchestrator.stub_agent:run_repo` each "agent" looks its answer up in `orchestrator/stub_answers.json`. The pull requests say so, and `GET /config` on the page's server names the worker in use. Without that variable a run starts the real worker, `worker.run_repo:run_repo`, which needs a Vibe home and a Mistral key: see [docs/AGENT.md](docs/AGENT.md).
 - **The sandbox, in the demo runs.** Those runs set `LE_CHONK_ALLOW_UNSANDBOXED=1`, so the gate ran the proof tests outside it. `sandbox/douane` is on this branch now, and the tests run the gate through it. Without the switch the gate refuses to run agent-written tests unsandboxed.
 
 **Not known yet**
@@ -205,7 +205,7 @@ LE_CHONK_RUN_REPO=orchestrator.stub_agent:run_repo \
 uv run python -m web.app
 ```
 
-The page reads `LE_CHONK_RUN_REPO` only to show the stand-in banner.
+The page's server reads `LE_CHONK_RUN_REPO` only to report the worker in `GET /config`.
 
 Add `LE_CHONK_PULL_REQUESTS=draft` to the worker to have it open a draft pull request for each verified fix. That machine needs `git` and `gh` signed in with push access to the apps. Read the note on CI in the build log first.
 
