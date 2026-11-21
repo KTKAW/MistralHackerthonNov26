@@ -1,0 +1,10 @@
+{
+  "note": "The demo fleet: five small services, each in its own repository. Every one pins authlib 1.8.0. Each commit below was reviewed and tested on authlib 1.8.0 and 1.9.0 on 21 November 2026. Fetch them with: uv run python -m orchestrator.fetch_fleet",
+  "apps": [
+    {"name": "auth-gateway", "url": "https://github.com/memlish/auth-gateway.git", "commit": "65dac48d4d7d2305bfcdb97ee9a3c6ae97298484"},
+    {"name": "billing-api", "url": "https://github.com/memlish/billing-api.git", "commit": "ee9ea0d7b18db020eeeb783ef6edad62570fada2"},
+    {"name": "session-service", "url": "https://github.com/memlish/session-service.git", "commit": "f1022f7dfeeeb966fe2c5db1d3c73208b1b167e3"},
+    {"name": "token-signer", "url": "https://github.com/memlish/token-signer.git", "commit": "5b31a2b9a7a9f66f26243e89cff3b9e28d622d6c"},
+    {"name": "profile-api", "url": "https://github.com/memlish/profile-api.git", "commit": "f1005d6d1f38d46bd9c783504a264941baf7878b"}
+  ]
+}

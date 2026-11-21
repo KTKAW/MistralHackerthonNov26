@@ -1,0 +1,67 @@
+{
+  "note": "The answers the stand-in worker gives for the demo fleet, checked by hand on 21 November 2026 against the commits in fleet.json. A real agent never sees this file: it gets a copy of one app and nothing else. In each path entry, \"has\" is text that must be on that line; a test checks it against the fetched apps.",
+  "apps": {
+    "auth-gateway": {
+      "verdict": "affected_fixed",
+      "hidden_route": false,
+      "entry": "POST /introspect",
+      "module": "auth_gateway.app",
+      "request": {"method": "POST", "path": "/introspect", "token_in": "body", "body": {}},
+      "subject": "attacker",
+      "why": "The handler passes the token from the request body straight to JsonWebSignature.deserialize_json.",
+      "path": [
+        {"file": "src/auth_gateway/app.py", "line": 103, "has": "def introspect", "note": "entry point POST /introspect"},
+        {"file": "src/auth_gateway/app.py", "line": 111, "has": "_verify_token(request.token)", "note": "the token comes from the request body"},
+        {"file": "src/auth_gateway/app.py", "line": 71, "has": "jws.deserialize_json(", "note": "direct call to the flawed function"}
+      ]
+    },
+    "billing-api": {
+      "verdict": "affected_fixed",
+      "hidden_route": true,
+      "entry": "POST /charge",
+      "module": "billing_api.app",
+      "request": {"method": "POST", "path": "/charge", "token_in": "bearer", "body": {"amount": 1, "description": "proof"}},
+      "subject": "alice",
+      "why": "The route depends on current_customer, which calls verify_bearer, which calls JsonWebSignature.deserialize. That accepts JSON serialization and hands it to the flawed function.",
+      "path": [
+        {"file": "src/billing_api/app.py", "line": 81, "has": "def charge", "note": "entry point POST /charge"},
+        {"file": "src/billing_api/app.py", "line": 83, "has": "Depends(current_customer)", "note": "the bearer token is resolved by a dependency"},
+        {"file": "src/billing_api/security.py", "line": 66, "has": "verify_bearer(token)", "note": "the dependency calls a general-purpose helper"},
+        {"file": "src/billing_api/security.py", "line": 45, "has": "_jws.deserialize(", "note": "accepts any serialization, so JSON input reaches the flawed function"}
+      ]
+    },
+    "session-service": {
+      "verdict": "not_affected",
+      "hidden_route": false,
+      "entry": "GET /me",
+      "why": "The bearer token is verified with JsonWebToken.decode, which takes the compact format only. JSON input fails to decode before any signature check.",
+      "path": [
+        {"file": "src/session_service/app.py", "line": 73, "has": "def me", "note": "entry point GET /me"},
+        {"file": "src/session_service/app.py", "line": 49, "has": "tokens.verify(", "note": "the only place an inbound token is checked"},
+        {"file": "src/session_service/tokens.py", "line": 43, "has": "_jwt.decode(", "note": "compact format only; the trail stops before the flawed function"}
+      ]
+    },
+    "token-signer": {
+      "verdict": "not_affected",
+      "hidden_route": false,
+      "entry": "POST /sign",
+      "why": "The service only signs, with serialize_compact. No code verifies or deserializes an inbound token.",
+      "path": [
+        {"file": "src/token_signer/app.py", "line": 87, "has": "def sign(", "note": "entry point POST /sign"},
+        {"file": "src/token_signer/signing.py", "line": 44, "has": "serialize_compact(", "note": "the only call into the library, and it signs"}
+      ]
+    },
+    "profile-api": {
+      "verdict": "needs_human",
+      "hidden_route": false,
+      "entry": "GET /profile",
+      "why": "JSON input reaches JsonWebSignature.deserialize only when the setting PROFILE_ACCEPT_JSON_TOKENS is on. It is off by default. Whether any deployment turns it on is not in the repository, so a person must decide.",
+      "path": [
+        {"file": "src/profile_api/app.py", "line": 132, "has": "def get_profile", "note": "entry point GET /profile"},
+        {"file": "src/profile_api/app.py", "line": 84, "has": "accept_json_tokens()", "note": "JSON tokens are refused here unless the setting is on"},
+        {"file": "src/profile_api/app.py", "line": 86, "has": "_jws.deserialize(json.loads(token)", "note": "with the setting on, JSON input reaches the flawed function"},
+        {"file": "src/profile_api/config.py", "line": 27, "has": "def accept_json_tokens", "note": "the setting, off by default"}
+      ]
+    }
+  }
+}
