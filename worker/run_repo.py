@@ -46,7 +46,10 @@ COPY_IGNORE = shutil.ignore_patterns("__pycache__", ".pytest_cache", ".venv", "*
 
 
 def _log(msg):
-    print(f"[run_repo] {msg}", flush=True)
+    try:
+        print(f"[run_repo] {msg}", flush=True)
+    except (BrokenPipeError, OSError):
+        pass  # Ignore pipe errors in Temporal sandbox
 
 
 def _prepare_work_copy(run_id, repo, fleet_root, runs_root):
