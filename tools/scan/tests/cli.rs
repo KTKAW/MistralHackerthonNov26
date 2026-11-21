@@ -2,6 +2,10 @@
 //! uses CARGO_BIN_EXE_kb-scan provided by cargo for integration tests.
 
 use std::process::Command;
+use std::sync::Mutex;
+
+/// Serialises tests that run `git fetch` against the real repo (git lock contention).
+static GIT_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 const BIN: &str = env!("CARGO_BIN_EXE_kb-scan");
 
@@ -106,6 +110,7 @@ fn scan_offline_with_empty_feeds_reports_schema() {
 
 #[test]
 fn watch_lock_conflict_exits_4() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it3-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -187,6 +192,7 @@ fn watch_with_unknown_shard_is_usage_error() {
 
 #[test]
 fn shard_path_isolation_two_sync_shards() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it8-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -218,6 +224,7 @@ fn shard_path_isolation_two_sync_shards() {
 
 #[test]
 fn swarm_lock_conflict_exits_4() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it9-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -343,6 +350,7 @@ fn verify_shard_with_stub_agent() {
 
 #[test]
 fn swarm_writes_triage_handoff() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it12-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -400,6 +408,7 @@ fn sandbox_wrapper() -> String {
 
 #[test]
 fn swarm_without_sandbox_fails_closed() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it13-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -412,6 +421,7 @@ fn swarm_without_sandbox_fails_closed() {
 
 #[test]
 fn swarm_allow_unsandboxed_runs_with_loud_warning() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it14-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -426,6 +436,7 @@ fn swarm_allow_unsandboxed_runs_with_loud_warning() {
 
 #[test]
 fn swarm_passthrough_sandbox_wraps_network_shards_only() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it15-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -511,6 +522,7 @@ fn explore_sandbox_cmd_wraps_agents() {
 
 #[test]
 fn watch_full_pipeline_without_sandbox_fails_closed() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it17-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -764,6 +776,7 @@ fn agent_spawning_without_sandbox_cmd_fails_closed() {
 
 #[test]
 fn scan_and_sync_pass_sandbox_gate() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it19-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -817,6 +830,7 @@ fn scan_and_sync_pass_sandbox_gate() {
 
 #[test]
 fn stop_file_ends_watch() {
+    let _git = GIT_TEST_LOCK.lock().unwrap();
     let dir = std::env::temp_dir().join(format!("kb-scan-it4-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
