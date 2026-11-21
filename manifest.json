@@ -235,6 +235,14 @@
    "generated": "true"
   },
   {
+   "path": "advisories/scan-latest.md",
+   "type": "feed-snapshot",
+   "title": "kb-scan: continuous scanner report",
+   "feed": "kb-scan-report/1",
+   "fetched": "2026-11-21",
+   "generated": "true"
+  },
+  {
    "path": "concepts/agent-containment.md",
    "type": "concept",
    "title": "Agent containment",

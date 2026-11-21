@@ -56,7 +56,8 @@ raw/           local full-text captures (gitignored)
 log.md         what was added and changed, and when
 watchlist.md   publishers to re-check and open leads
 diagrams/      images drawn from the Mermaid blocks in the pages, generated
-tools/         lint.py, kev.py and diagrams.py, standard library only
+tools/         lint.py, kev.py, scan.py and diagrams.py, standard library only
+tools/scan/    the kb-scan engine (Rust, static musl binary), config and inventory examples, ORCHESTRATION.md
 ```
 
 This is the LLM wiki pattern: sources, a wiki that agents own, and a schema file that tells them how to maintain it.
@@ -87,3 +88,9 @@ python3 tools/kev.py
 ```
 
 Refreshes the snapshot of exploited vulnerabilities from CISA's feed.
+
+```bash
+python3 tools/scan.py scan --inventory tools/scan/inventory.example.json
+```
+
+Runs one pass of the kb-scan engine (built on demand with cargo) against the live feeds and prints a `kb-scan-report/1`. `python3 tools/scan.py loop` runs it continuously, `python3 tools/scan.py sync` polls the git remote for new branches and commits, `python3 tools/scan.py report --json <report>` renders the newest report into [advisories/scan-latest.md](advisories/scan-latest.md), and `python3 tools/scan.py selftest` checks the wrapper.

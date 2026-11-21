@@ -6,3 +6,7 @@ raw/*
 .obsidian/
 .DS_Store
 __pycache__/
+
+# kb-scan engine build and run output
+tools/scan/target/
+tools/scan/out/

@@ -82,6 +82,10 @@ This is this knowledge base's reading, not a rule from a source.
 
 The reasoning is on [Patching and exploit speed](concepts/patching-and-exploit-speed.md).
 
+## The continuous scanner
+
+`tools/scan.py` wraps the kb-scan engine, a static Rust binary under `tools/scan/` that is built on demand. It polls the feeds above against an inventory of what we run and writes `kb-scan-report/1` JSON. `python3 tools/scan.py loop` runs it continuously, `python3 tools/scan.py sync` polls this repository's git remote for new branches and commits, and `python3 tools/scan.py report --json <report>` renders the newest report as a snapshot page at [kb-scan: continuous scanner report](advisories/scan-latest.md). The engine only reports; a person acts on what it finds.
+
 ## What the feeds do not tell you
 
 - Whether you run the thing. That needs an inventory: lockfiles, installed apps, browser extensions, MCP servers and skills.

@@ -76,6 +76,7 @@ Each has the same sections: ask first, contain, scope, recover, report, prevent 
 Things that happened or were disclosed, newest first. Each names what it affects and the playbook to follow.
 
 - [CISA KEV: recent entries](advisories/kev-recent.md) — a generated snapshot of vulnerabilities being exploited now. Refresh with `python3 tools/kev.py`.
+- [kb-scan: continuous scanner report](advisories/scan-latest.md) — a generated snapshot of the latest scan of the feeds against our inventory. Refresh with `python3 tools/scan.py report --json tools/scan/out/latest.json`.
 
 <!-- advisories:start -->
 - 2026-10-27 · [Authlib accepts a JWS with no signatures (CVE-2026-96760)](advisories/2026-10-authlib-cve-2026-96760.md) · vulnerability, demonstrated · playbook: [advisory-fleet-triage](playbooks/advisory-fleet-triage.md)

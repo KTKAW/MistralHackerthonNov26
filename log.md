@@ -81,3 +81,14 @@ The team's project brief and architecture page, read in full at commit `c0211d4`
 - tools/lint.py
 
 GitHub draws the Mermaid blocks, but its built-in view of the large system diagram is cramped. Each diagram is now also an image in `diagrams/`, drawn by `tools/diagrams.py`, with the Mermaid source kept in the page under it. The lint fails when an embedded image is missing.
+
+## [2026-11-21] edit | Rust scan-engine swarm (tools/scan) with tools/scan.py wrapper, containerisation, vendored skills
+
+- .gitignore
+- AGENTS.md
+- README.md
+- feeds.md
+- index.md
+- manifest.json
+- advisories/scan-latest.md
+- tools/ (29 files)
