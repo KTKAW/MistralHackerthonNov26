@@ -230,6 +230,65 @@ def create_app(runs_root=None) -> FastAPI:
         return StreamingResponse(gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache"})
 
+    def _work_dir(run_id: str, repo: str) -> Path:
+        work = app.state.runs_root / _safe_name(run_id) / _safe_name(repo)
+        if not work.is_dir():
+            raise HTTPException(status_code=404, detail="no such run")
+        return work
+
+    @app.get("/api/runs/{run_id}/{repo}/file")
+    def get_file(run_id: str, repo: str, path: str = Query(...)):
+        """Read one file inside the work copy. Mirrors path_hook's denies:
+        .env / secrets anywhere are refused; nothing outside the work copy."""
+        work = _work_dir(run_id, repo)
+        if not path or "\x00" in path:
+            raise HTTPException(status_code=400, detail="bad path")
+        p = Path(path)
+        if not p.is_absolute():
+            p = work / p
+        try:
+            rp = p.resolve(strict=True)
+        except OSError:
+            raise HTTPException(status_code=404, detail="no such file")
+        parts = rp.parts
+        if ".env" in parts or "secrets" in parts:
+            raise HTTPException(status_code=403, detail="refused: secrets (.env / secrets/) are never served")
+        if rp != work and work not in rp.parents:
+            raise HTTPException(status_code=403, detail="refused: outside the work copy")
+        if not rp.is_file():
+            raise HTTPException(status_code=404, detail="not a file")
+        data = rp.read_bytes()[:200_000]
+        return {
+            "path": str(rp), "rel": str(rp.relative_to(work)),
+            "content": data.decode("utf-8", "replace"),
+            "truncated": rp.stat().st_size > 200_000,
+        }
+
+    @app.get("/api/runs/{run_id}/{repo}/diff")
+    def get_diff(run_id: str, repo: str):
+        """git status + diff of the work copy vs its baseline commit."""
+        work = _work_dir(run_id, repo)
+        src = work / "src"
+        out = {"available": False, "status": "", "diff": "", "entries": [], "deleted": []}
+        if not (src / ".git").exists():
+            return out
+        out["available"] = True
+        for args, key in ((["status", "--porcelain"], "status"), (["diff"], "diff")):
+            try:
+                res = subprocess.run(["git", "-C", str(src)] + args,
+                                     capture_output=True, text=True, timeout=15)
+                out[key] = res.stdout[:100_000]
+            except (OSError, subprocess.SubprocessError) as e:
+                out[key] = f"git error: {e}"
+        for line in out["status"].splitlines():
+            if line.strip():
+                code, _, p = line.partition(" ")
+                entry = {"code": code.strip(), "path": p.strip()}
+                out["entries"].append(entry)
+                if "D" in entry["code"]:
+                    out["deleted"].append(entry["path"])
+        return out
+
     @app.get("/")
     def index():
         return FileResponse(STATIC_DIR / "index.html")
