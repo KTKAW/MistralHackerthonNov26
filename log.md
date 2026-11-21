@@ -192,3 +192,8 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 ## [2026-11-21] edit | local-first single entrypoint run_local.sh + UI demo mode (?demo=1)
 
 - run_local.sh
+
+## [2026-11-21] edit | run_local.sh: serve --addr flag; engine shard gate honors KB_SCAN_IN_SANDBOX
+
+- run_local.sh
+- tools/scan/src/merge.rs

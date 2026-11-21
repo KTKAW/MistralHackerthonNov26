@@ -53,7 +53,7 @@ else
   start simulator python3 tools/scan/simulate.py loop --interval "$SIM_INTERVAL"
   UI_URL="http://127.0.0.1:$PORT_UI/"
 fi
-start scan-serve "$BIN" serve --port "$PORT_SCAN" --out-dir tools/scan/out
+start scan-serve "$BIN" serve --out-dir tools/scan/out --addr "127.0.0.1:$PORT_SCAN"
 start ui uv run uvicorn web.app:app --host 127.0.0.1 --port "$PORT_UI"
 
 echo

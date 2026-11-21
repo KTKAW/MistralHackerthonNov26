@@ -58,7 +58,11 @@ pub fn is_network_shard(name: &str) -> bool {
 /// --allow-unsandboxed was not passed. With --allow-unsandboxed it logs a
 /// loud warning instead.
 pub fn require_sandbox(sandbox_cmd: &[String], network_shards: &[String], allow_unsandboxed: bool) -> Result<(), i32> {
-    if network_shards.is_empty() || !sandbox_cmd.is_empty() {
+    if network_shards.is_empty()
+        || !sandbox_cmd.is_empty()
+        || std::env::var("KB_SCAN_IN_SANDBOX").is_ok()
+    {
+        // KB_SCAN_IN_SANDBOX means the wrapper already placed us inside the sandbox.
         return Ok(());
     }
     if allow_unsandboxed {
