@@ -16,12 +16,18 @@ import asyncio
 import json
 import os
 import re
+import signal
 import subprocess
+import sys
+import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUNS_ROOT = Path(os.environ.get("LE_CHONK_RUNS_ROOT", str(REPO_ROOT / "runs"))).resolve()
@@ -37,6 +43,10 @@ VERDICT_COLORS = {
     "affected_fixed": "amber",
     "needs_human": "purple",
 }
+
+
+def sys_executable() -> str:
+    return sys.executable or "python3"
 
 
 def _read_json(path: Path):
@@ -184,10 +194,19 @@ def run_detail(runs_root: Path, run_id: str, repo: str) -> dict:
     }
 
 
+def _write_run_meta(runs_root: Path, run_id: str, **fields):
+    meta_path = runs_root / run_id / "run.json"
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta = _read_json(meta_path) or {}
+    meta.update(fields)
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n")
+
+
 def create_app(runs_root=None) -> FastAPI:
     """App factory — tests pass a tmp runs_root."""
     app = FastAPI(title="le-chonk sandbox audit console")
     app.state.runs_root = Path(runs_root).resolve() if runs_root else RUNS_ROOT
+    app.state.procs = {}  # run_id -> subprocess.Popen of worker/run_repo.py
 
     @app.get("/api/health")
     def health():
@@ -288,6 +307,81 @@ def create_app(runs_root=None) -> FastAPI:
                 if "D" in entry["code"]:
                     out["deleted"].append(entry["path"])
         return out
+
+    # ---------- controls ----------
+
+    class StartRun(BaseModel):
+        repo: str
+        run_id: str | None = None
+
+    @app.post("/api/runs")
+    def start_run(body: StartRun):
+        """Start worker/run_repo.py as a subprocess (own process group, so it can
+        be SIGTERMed). run_repo.py itself is untouched — pinned contract."""
+        repo = _safe_name(body.repo)
+        run_id = _safe_name(body.run_id) if body.run_id else \
+            "ui-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        if run_id in app.state.procs and app.state.procs[run_id].poll() is None:
+            raise HTTPException(status_code=409, detail=f"run {run_id} already running")
+        # the repo must exist as fleet/<repo> or a pre-seeded runs/<run_id>/src
+        if not (REPO_ROOT / "fleet" / repo).is_dir() and \
+                not (app.state.runs_root / run_id / "src").is_dir():
+            raise HTTPException(status_code=404, detail=f"no such repo: {repo}")
+        log_path = app.state.runs_root / run_id / "ui-run.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_fh = log_path.open("a")
+        proc = subprocess.Popen(
+            [sys_executable(), str(REPO_ROOT / "worker" / "run_repo.py"), run_id, repo],
+            cwd=str(REPO_ROOT), stdout=log_fh, stderr=subprocess.STDOUT,
+            start_new_session=True,  # own process group → clean SIGTERM to the tree
+        )
+        app.state.procs[run_id] = proc
+        _write_run_meta(app.state.runs_root, run_id, repo=repo,
+                        started_at=datetime.now(timezone.utc).isoformat(),
+                        pid=proc.pid, status="running", ui=True)
+
+        def waiter():
+            rc = proc.wait()
+            meta = _read_json(app.state.runs_root / run_id / "run.json") or {}
+            if meta.get("status") == "running":  # don't clobber an explicit "stopped"
+                _write_run_meta(app.state.runs_root, run_id,
+                                status="done" if rc == 0 else "failed", rc=rc,
+                                finished_at=datetime.now(timezone.utc).isoformat())
+            log_fh.close()
+
+        threading.Thread(target=waiter, daemon=True).start()
+        return {"run_id": run_id, "repo": repo, "pid": proc.pid, "status": "running",
+                "log": str(log_path)}
+
+    @app.post("/api/runs/{run_id}/stop")
+    def stop_run(run_id: str):
+        run_id = _safe_name(run_id)
+        proc = app.state.procs.get(run_id)
+        pid = proc.pid if proc and proc.poll() is None else \
+            (_read_json(app.state.runs_root / run_id / "run.json") or {}).get("pid")
+        if not pid or not _pid_alive(pid):
+            raise HTTPException(status_code=404, detail="no live run with that id")
+        try:
+            os.killpg(int(pid), signal.SIGTERM)  # Vibe stops cleanly, writes export.json
+        except OSError:
+            os.kill(int(pid), signal.SIGTERM)
+        _write_run_meta(app.state.runs_root, run_id, status="stopped",
+                        stopped_at=datetime.now(timezone.utc).isoformat())
+        return {"run_id": run_id, "pid": pid, "signal": "SIGTERM"}
+
+    @app.post("/api/runs/{run_id}/{repo}/validate")
+    def validate_run(run_id: str, repo: str):
+        work = _work_dir(run_id, repo)
+        verdict = work / "verdict.json"
+        if not verdict.is_file():
+            raise HTTPException(status_code=404, detail="no verdict.json yet")
+        try:
+            res = subprocess.run([sys_executable(), str(REPO_ROOT / "schema" / "validate.py"),
+                                  str(verdict)], capture_output=True, text=True, timeout=30)
+            return {"ok": res.returncode == 0, "rc": res.returncode,
+                    "output": (res.stdout + res.stderr).strip()}
+        except (OSError, subprocess.SubprocessError) as e:
+            raise HTTPException(status_code=500, detail=f"validator failed: {e}")
 
     @app.get("/")
     def index():

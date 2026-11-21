@@ -13,7 +13,6 @@ document.querySelectorAll("#tabs .tab").forEach((btn) => {
     document.querySelectorAll("#tabs .tab").forEach((b) => b.classList.toggle("active", b === btn));
     document.querySelectorAll(".tabpage").forEach((p) =>
       p.classList.toggle("active", p.id === "tab-" + btn.dataset.tab));
-    if (btn.dataset.tab === "runs") startPolling(); else stopPolling();
   });
 });
 
@@ -36,8 +35,14 @@ async function fetchRuns() {
   try {
     const data = await (await fetch("/api/runs")).json();
     state.runs = data.runs;
-    renderCards();
+    if ($("#runs-view") && !$("#runs-view").classList.contains("hidden")) renderCards();
     $("#runs-meta").textContent = data.runs.length + " run(s) · polling 2 s";
+    // live-update the open detail header from its card
+    if (state.detail) {
+      const c = data.runs.find((r) => r.run_id === state.detail.run_id && r.repo === state.detail.repo);
+      const chip = $("#detail-status");
+      if (c && chip) { chip.textContent = c.status; chip.className = "chip"; }
+    }
   } catch { /* server down */ }
 }
 
@@ -88,7 +93,13 @@ function renderDetail() {
     `<span class="stage ${ok ? "done" : "missing"}">${k}</span>`).join('<span class="stage-arrow">→</span>');
   $("#detail").innerHTML = `
     <h2>${esc(d.run_id)} / ${esc(d.repo)} ${verdictBadge(v.verdict)}
-      <span class="chip">${esc(c.status)}</span></h2>
+      <span class="chip" id="detail-status">${esc(c.status)}</span></h2>
+    <div class="toolbar">
+      <button id="btn-validate">validate verdict</button>
+      <button id="btn-stop" class="danger">stop run (SIGTERM)</button>
+      <button id="btn-rerun">re-run</button>
+      <span id="control-out" class="dim mono" style="font-size:12px"></span>
+    </div>
     <div class="pipeline">${stages}</div>
     <div class="panel"><h3>Summary</h3><div class="kv">
       <div><b>reason</b> ${esc(v.reason || "—")}</div>
@@ -102,7 +113,39 @@ function renderDetail() {
   renderGitPanel(d);
   renderHookPanel(d);
   startHookStream(d.run_id, d.repo);
+  wireControls(d);
 }
+
+/* ---------- controls: validate / stop / re-run / new run ---------- */
+function wireControls(d) {
+  const out = (msg, bad) => { const el = $("#control-out"); if (el) { el.textContent = msg; el.style.color = bad ? "var(--red)" : "var(--green)"; } };
+  const rid = encodeURIComponent(d.run_id), rp = encodeURIComponent(d.repo);
+  $("#btn-validate").onclick = async () => {
+    out("validating…");
+    const r = await fetch(`/api/runs/${rid}/${rp}/validate`, { method: "POST" });
+    const j = await r.json();
+    out(j.ok ? "schema OK ✓" : "INVALID: " + j.output, !j.ok);
+  };
+  $("#btn-stop").onclick = async () => {
+    const r = await fetch(`/api/runs/${rid}/stop`, { method: "POST" });
+    if (r.ok) out("SIGTERM sent"); else out("stop failed: " + (await r.json()).detail, true);
+  };
+  $("#btn-rerun").onclick = async () => {
+    const r = await fetch("/api/runs", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo: d.repo, run_id: d.run_id }) });
+    if (r.ok) { out("re-run started"); fetchRuns(); } else out("start failed: " + (await r.json()).detail, true);
+  };
+}
+
+$("#btn-new-run").addEventListener("click", async () => {
+  const repo = prompt("repo to run (fleet/<repo> or pre-seeded runs/<run_id>/src):", "selftest");
+  if (!repo) return;
+  const runId = prompt("run_id (blank = auto):", "") || null;
+  const r = await fetch("/api/runs", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, run_id: runId }) });
+  if (r.ok) { const j = await r.json(); alert(`started ${j.run_id} (pid ${j.pid})\nlog: ${j.log}`); fetchRuns(); }
+  else alert("start failed: " + (await r.json()).detail);
+});
 
 /* ---------- verdict panel: path chain, proof, suite, fix ---------- */
 function renderVerdictPanel(d) {
