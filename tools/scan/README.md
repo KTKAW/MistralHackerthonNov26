@@ -203,11 +203,18 @@ Unknown keys are an error. Inventory shape:
 
 ```json
 {
-  "packages": [{ "ecosystem": "npm", "name": "lodash", "version": "4.17.20" }],
+  "packages": [{ "ecosystem": "npm", "name": "lodash", "version": "4.17.20", "source": "frontend/package-lock.json" }],
   "products": [{ "vendor": "Microsoft", "product": "Exchange Server" }],
   "cves": ["CVE-2021-44228"]
 }
 ```
+
+Package entries may carry an optional `source` (the lockfile/repo path the
+entry came from, e.g. produced by `tools/scan/inventory.py`). When a finding
+matches such a package, the finding in `kb-scan-report/1` (and therefore in
+`triage.json`) carries `inventory_source: <path>` — the repo hint the Le Chonk
+workflow uses for fan-out. The field is absent when the inventory entry has no
+`source`. Merge preserves it unchanged.
 
 ## Security model
 

@@ -168,7 +168,7 @@ fn merge_on_fixture_dir() {
     std::fs::create_dir_all(&shard).unwrap();
     std::fs::write(
         shard.join("latest.json"),
-        r#"{"schema":"kb-scan-report/1","generated_at":"2026-11-21T00:00:00Z","feeds":[{"name":"kev","status":"ok","entries":1}],"findings":[{"tier":2,"id":"CVE-1"}],"stats":{"packages":1,"cves":0,"findings":1,"errors":[]}}"#,
+        r#"{"schema":"kb-scan-report/1","generated_at":"2026-11-21T00:00:00Z","feeds":[{"name":"kev","status":"ok","entries":1}],"findings":[{"tier":2,"id":"CVE-1","inventory_source":"repo/package-lock.json"}],"stats":{"packages":1,"cves":0,"findings":1,"errors":[]}}"#,
     )
     .unwrap();
     let (code, stdout, _) = run(&["merge", "--out-dir", dir.to_str().unwrap()]);
@@ -176,6 +176,7 @@ fn merge_on_fixture_dir() {
     assert!(stdout.contains("\"kb-scan-report/1\""));
     assert!(stdout.contains("\"swarm\":true"));
     assert!(stdout.contains("\"kev\""));
+    assert!(stdout.contains("repo/package-lock.json"), "inventory_source lost in merge: {}", stdout);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

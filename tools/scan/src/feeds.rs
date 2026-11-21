@@ -51,6 +51,8 @@ pub struct Finding {
     pub kind: &'static str, // kev | osv | github | epss | nvd
     pub id: String,
     pub package: Option<String>,
+    /// lockfile/repo path from the inventory entry, when present
+    pub inventory_source: Option<String>,
     pub product: Option<String>,
     pub cve: Option<String>,
     pub summary: String,
@@ -79,6 +81,9 @@ impl Finding {
         ];
         if let Some(p) = &self.package {
             m.push(("package".to_string(), Value::str(p)));
+        }
+        if let Some(s) = &self.inventory_source {
+            m.push(("inventory_source".to_string(), Value::str(s)));
         }
         if let Some(p) = &self.product {
             m.push(("product".to_string(), Value::str(p)));
@@ -215,6 +220,7 @@ fn osv_findings_from_vuln(v: &Value, pkg: &Package, out: &mut Vec<Finding>) {
         kind: "osv",
         id,
         package: Some(format!("{}:{}@{}", pkg.ecosystem, pkg.name, pkg.version)),
+        inventory_source: pkg.source.clone(),
         product: None,
         cve,
         summary,
@@ -376,6 +382,7 @@ pub fn query_github(cfg: &Config, packages: &[Package]) -> (Vec<Finding>, FeedSt
                                     kind: "github",
                                     id: ghsa,
                                     package: Some(format!("{}:{}@{}", pkg.ecosystem, pkg.name, pkg.version)),
+                                    inventory_source: pkg.source.clone(),
                                     product: None,
                                     cve,
                                     summary: sanitize(a.get("summary").and_then(|x| x.as_str()).unwrap_or("")),
@@ -499,6 +506,7 @@ pub fn query_nvd(cfg: &Config, cves: &[String]) -> (Vec<Finding>, FeedStatus, Op
                                         kind: "nvd",
                                         id,
                                         package: None,
+                                        inventory_source: None,
                                         product: None,
                                         cve: Some(cve.clone()),
                                         summary: sanitize(desc),
@@ -538,7 +546,7 @@ mod tests {
     #[test]
     fn osv_batch_body_shape_and_chunk_cap() {
         let pkgs: Vec<Package> = (0..5)
-            .map(|i| Package { ecosystem: "npm".into(), name: format!("p{}", i), version: "1.0.0".into() })
+            .map(|i| Package { ecosystem: "npm".into(), name: format!("p{}", i), version: "1.0.0".into(), source: None })
             .collect();
         let body = osv_query_body(&pkgs);
         let v = json::parse(&body).unwrap();
@@ -561,7 +569,7 @@ mod tests {
 
     #[test]
     fn osv_vuln_to_finding_mal_and_cve() {
-        let pkg = Package { ecosystem: "npm".into(), name: "evil".into(), version: "1.0.0".into() };
+        let pkg = Package { ecosystem: "npm".into(), name: "evil".into(), version: "1.0.0".into(), source: None };
         let vuln = json::parse(r#"{"id":"MAL-2026-1","summary":"bad  pkg","aliases":["CVE-2026-1"],"database_specific":{"severity":"CRITICAL"}}"#).unwrap();
         let mut out = Vec::new();
         osv_findings_from_vuln(&vuln, &pkg, &mut out);
@@ -570,5 +578,25 @@ mod tests {
         assert!(out[0].high_severity);
         assert_eq!(out[0].cve.as_deref(), Some("CVE-2026-1"));
         assert_eq!(out[0].summary, "bad pkg");
+    }
+
+    #[test]
+    fn finding_carries_inventory_source_when_present() {
+        use std::collections::HashSet;
+        let kev: HashSet<String> = HashSet::new();
+        // with source: emitted in JSON
+        let pkg = Package { ecosystem: "npm".into(), name: "lodash".into(), version: "4.17.20".into(), source: Some("frontend/package-lock.json".into()) };
+        let vuln = json::parse(r#"{"id":"GHSA-x","summary":"s","database_specific":{"severity":"HIGH"}}"#).unwrap();
+        let mut out = Vec::new();
+        osv_findings_from_vuln(&vuln, &pkg, &mut out);
+        assert_eq!(out[0].inventory_source.as_deref(), Some("frontend/package-lock.json"));
+        let j = out[0].to_json(&kev, 0.5);
+        assert_eq!(j.get("inventory_source").and_then(|v| v.as_str()), Some("frontend/package-lock.json"));
+        // without source: field absent
+        let pkg2 = Package { source: None, ..pkg.clone() };
+        let mut out2 = Vec::new();
+        osv_findings_from_vuln(&vuln, &pkg2, &mut out2);
+        let j2 = out2[0].to_json(&kev, 0.5);
+        assert!(j2.get("inventory_source").is_none());
     }
 }

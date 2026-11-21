@@ -12,6 +12,18 @@ at real feeds, `runs/` verdicts or `advisories/` with these.
 - `speak-stub.sh` — the `KB_SCAN_SPEAK_STUB` script: logs spoken text to
   `$SIM_STUB_LOG` instead of calling any model API.
 
+## --from-inventory mode
+
+`simulate.py generate/run/loop --from-inventory` reads `tools/scan/inventory.json`
+(packages carry a `source` lockfile path) and adds high-fidelity fakes that mimic
+attacks on our own stack: a fake `MAL-` id naming a real `package@version`, a fake
+KEV entry for a plausible CVE affecting one of our products, and an injection
+payload in a finding whose package matches a real inventory entry. Each keeps
+`status:'unverified'` + a SIMULATED marker and points `source` at the real lockfile
+it impersonates. Assertions (a)/(e)/(i) prove such fakes are never confirmed, never
+alerted and never reach `serve /brief`; `sim-triage.json` gains a `feedback` section
+of proposed, human-reviewed gate-rule/watchlist entries (`human_reviewed: false`).
+
 Generated artifacts land only under the test out-dir (default
 `tools/scan/out/simulate/`); the single workflow-facing output is the clearly
 marked `runs/<run_id>/sim-triage.json`.

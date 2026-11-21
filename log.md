@@ -119,3 +119,14 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 
 - tools/scan/inventory.json
 - tools/scan/inventory.py
+
+## [2026-11-21] edit | inventory_source in findings/triage.json + simulator --from-inventory with feedback section
+
+- tools/scan/README.md
+- tools/scan/simulate.py
+- tools/scan/src/config.rs
+- tools/scan/src/feeds.rs
+- tools/scan/src/merge.rs
+- tools/scan/src/scan.rs
+- tools/scan/tests/cli.rs
+- tools/scan/tests/simulate/README.md

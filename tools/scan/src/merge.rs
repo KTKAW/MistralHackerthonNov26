@@ -421,6 +421,23 @@ mod tests {
     }
 
     #[test]
+    fn merge_preserves_inventory_source() {
+        let dir = fixture_dir("d");
+        write_shard(
+            &dir,
+            "osv",
+            r#"{"schema":"kb-scan-report/1","generated_at":"t",
+                "feeds":[{"name":"osv","status":"ok"}],
+                "findings":[{"tier":3,"id":"GHSA-y","package":"npm:lodash@4.17.20","inventory_source":"frontend/package-lock.json","summary":"s","source":"osv"}],
+                "stats":{"packages":1,"cves":0,"findings":1,"errors":[]}}"#,
+        );
+        let m = merge_out_dir(&dir).unwrap();
+        let f = m.report.get("findings").and_then(|v| v.as_array()).unwrap()[0].clone();
+        assert_eq!(f.get("inventory_source").and_then(|v| v.as_str()), Some("frontend/package-lock.json"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn merge_errors_when_no_shards() {
         let dir = fixture_dir("b");
         assert!(merge_out_dir(&dir).is_err());

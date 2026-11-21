@@ -52,6 +52,7 @@ pub fn run_scan(cfg: &Config, inv: &Inventory) -> ScanOutcome {
                     kind: "kev",
                     id: e.cve.clone(),
                     package: None,
+                    inventory_source: None,
                     product: if prod_hit && !cve_hit {
                         Some(format!("{} {}", e.vendor, e.product))
                     } else {
@@ -198,7 +199,7 @@ mod tests {
 
     fn sample_inventory() -> Inventory {
         Inventory {
-            packages: vec![Package { ecosystem: "npm".into(), name: "lodash".into(), version: "4.17.20".into() }],
+            packages: vec![Package { ecosystem: "npm".into(), name: "lodash".into(), version: "4.17.20".into(), source: None }],
             products: vec![],
             cves: vec!["CVE-2021-44228".to_string()],
         }

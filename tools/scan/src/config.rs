@@ -235,6 +235,8 @@ pub struct Package {
     pub ecosystem: String,
     pub name: String,
     pub version: String,
+    /// Optional lockfile/repo path the entry came from (e.g. from inventory.py).
+    pub source: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -263,10 +265,12 @@ pub fn parse_inventory(text: &str) -> Result<Inventory, String> {
                     let eco = item.get("ecosystem").and_then(|x| x.as_str()).ok_or("package missing ecosystem")?;
                     let name = item.get("name").and_then(|x| x.as_str()).ok_or("package missing name")?;
                     let ver = item.get("version").and_then(|x| x.as_str()).ok_or("package missing version")?;
+                    let source = item.get("source").and_then(|x| x.as_str()).map(sanitize);
                     inv.packages.push(Package {
                         ecosystem: sanitize(eco),
                         name: sanitize(name),
                         version: sanitize(ver),
+                        source,
                     });
                 }
             }
@@ -372,6 +376,9 @@ mod tests {
         .unwrap();
         assert_eq!(inv.packages.len(), 1);
         assert_eq!(inv.packages[0].name, "lodash");
+        assert_eq!(inv.packages[0].source, None);
+        let inv2 = parse_inventory(r#"{"packages": [{"ecosystem": "npm", "name": "lodash", "version": "4.17.20", "source": "frontend/package-lock.json"}]}"#).unwrap();
+        assert_eq!(inv2.packages[0].source.as_deref(), Some("frontend/package-lock.json"));
         assert_eq!(inv.products[0].vendor, "Microsoft");
         assert_eq!(inv.cves, vec!["CVE-2021-44228".to_string()]);
         assert!(parse_inventory(r#"{"nope": []}"#).is_err());
