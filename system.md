@@ -14,6 +14,8 @@ The team is building a tool for the first 24 hours after a vulnerability is anno
 
 When a serious vulnerability is announced in a library, a company has to answer one question quickly: which of our products are actually affected? The tool takes a security advisory, sends one agent into each repository, and returns a verdict per repository with proof. For an affected repository the proof is a test that triggers the flaw through the service's own entry point, fails before the fix and passes after it. For an unaffected one it is the reason, pointing at the code. The run ends with a draft of the regulatory early warning, which a person approves. [Project brief, Nov 2026](sources/team-project-brief.md)
 
+The integrated system as it stands on branch `integration/scan-engine-le-chonk` — the kb-scan poller and the adversarial simulator handing off to a Le Chonk run through `runs/<run_id>/`, the gate's `needs_human`-only rule, the hosting split and the voice paths — is documented in [The three-workflow integration](reports/integration-workflows.md).
+
 ## The system, with the knowledge base attached
 
 ![Diagram of one run. A security engineer pastes an advisory into the web page; the worker on our machine runs intake, read advisory, triage, one sandboxed agent per repository, the gate and the report; the engineer approves the draft and submits it to the CRA Single Reporting Platform. Mistral hosts the coordinator and the model. Four knowledge-base pages link into the read-advisory, triage and report steps.](diagrams/system-1.png)

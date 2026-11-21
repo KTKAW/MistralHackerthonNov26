@@ -157,3 +157,10 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 
 - vercel.json
 - tools/ (9 files)
+
+## [2026-11-21] edit | Document the three-workflow integration (kb-scan x simulator x Le Chonk) in reports/integration-workflows.md
+
+- README.md
+- index.md
+- system.md
+- tools/ (11 files)

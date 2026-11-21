@@ -43,6 +43,7 @@ If none of these fits, say that the knowledge base does not cover it. Offer the 
 - How do we check a suspicious call, message or payment request? [Social engineering and verification](concepts/social-engineering-and-verification.md)
 - Why do people keep pasting commands, and how do we stop it? [ClickFix and pasted commands](concepts/clickfix.md)
 - Where does AI help the defender, and where does it not? [AI-assisted defence](concepts/ai-assisted-defence.md)
+- How do the kb-scan poller, the adversarial simulator and a Le Chonk run hand off in the integrated system on `integration/scan-engine-le-chonk`? [The three-workflow integration](reports/integration-workflows.md)
 
 ## Playbooks
 
