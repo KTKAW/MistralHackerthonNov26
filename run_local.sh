@@ -44,13 +44,29 @@ start() { # name, command...
   echo "  $name (pid $!) — log: /tmp/kb-scan-local-$name.log"
 }
 
+# Bridge: stamp the newest Le Chonk run with the engine's merged report as its triage.json
+# (the swarm's --run-id path does the same when run standalone; here the watch loop holds the
+# engine lock, so we copy atomically instead). Content is identical: the merged kb-scan-report/1.
+bridge() {
+  while true; do
+    newest=$(ls -dt runs/run-* 2>/dev/null | head -1)
+    if [ -n "$newest" ] && [ -f tools/scan/out/latest.json ] && [ ! -f "$newest/triage.json" ]; then
+      cp tools/scan/out/latest.json "$newest/triage.json.tmp" && mv "$newest/triage.json.tmp" "$newest/triage.json"
+      echo "triage.json stamped for $newest" >> /tmp/kb-scan-local-bridge.log
+    fi
+    sleep 30
+  done
+}
+
 echo "kb-scan local stack"
 if [ "$DEMO" = "demo" ]; then
   echo "  demo mode: UI will use bundled sample data"
   UI_URL="http://127.0.0.1:$PORT_UI/?demo=1"
 else
   start engine-loop python3 tools/scan.py loop --interval "$ENGINE_INTERVAL"
-  start simulator python3 tools/scan/simulate.py loop --interval "$SIM_INTERVAL"
+  start simulator python3 tools/scan/simulate.py loop --interval "$SIM_INTERVAL" --from-inventory --from-history
+  bridge >/tmp/kb-scan-local-bridge.log 2>&1 &
+  pids="$pids $!"
   UI_URL="http://127.0.0.1:$PORT_UI/"
 fi
 start scan-serve "$BIN" serve --out-dir tools/scan/out --addr "127.0.0.1:$PORT_SCAN"

@@ -211,3 +211,7 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - tools/scan/simulate.py
 
 ## [2026-11-21] edit | expose GET /history (cross-run index) in the web API
+
+## [2026-11-21] edit | run_local.sh bridge stamps newest run with triage.json; simulator loop gets --from-history
+
+- run_local.sh
