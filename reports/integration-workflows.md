@@ -59,3 +59,7 @@ Both paths carry the same standing line: a person approves before anything is se
 
 - `tools/scan/ORCHESTRATION.md` is the engine-side contract for this same integration ("Live integration" section); it is owned by the scan coordinator and was not edited here.
 - Nothing in the integration lets feed or simulator data become a verdict; the only effect scan data can have on a run is the gate's downgrade to `needs_human`.
+
+## Cross-run history index (`orchestrator/history.py`)
+
+`rebuild(runs_root)` scans `runs/*/` (skipping `_`-prefixed folders), reads `run.json`, `events.jsonl`, every `<repo>/verdict.json` and `sim-triage.json` with kbscan-style capped reads, and writes `runs/_index/history.json` atomically (tmp + `os.replace`), size-capped at 512 KiB. All strings pass through `kbscan.text` (one line, markup escaped, capped); worker text in events is untrusted and never executed. The file holds four views: per-run state with verdicts and sim-triage breaches, per-advisory verdict distribution with gate/sim downgrades and breaches over time, per-repo verdict history, and a capped cross-run event timeline. It is read-only over the runs and is meant to be rebuilt after each run; TODO for the web agent: serve it as `GET /history`.
