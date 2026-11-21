@@ -120,7 +120,7 @@ def start_run(advisory_text: str):
     run_id = uuid.uuid4().hex[:12]
     started_at = datetime.now(timezone.utc).isoformat()
     if HOSTED:
-        from mistralai import Mistral
+        from mistralai.client import Mistral
         client = Mistral(api_key=os.environ.get("MISTRAL_API_KEY"))
         client.workflows.execute_workflow(
             workflow_identifier="le_chonk_run",
@@ -348,7 +348,7 @@ async def get_run(run_id: str):
 @app.post("/runs/{run_id}/approve")
 async def approve_run(run_id: str):
     if HOSTED:
-        from mistralai import Mistral
+        from mistralai.client import Mistral
         client = Mistral(api_key=os.environ.get("MISTRAL_API_KEY"))
         client.executions.signal_workflow_execution(
             execution_id=run_id, name="approve")

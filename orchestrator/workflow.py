@@ -97,7 +97,7 @@ def read_advisory(advisory_text, run_id, *, runs_root=RUNS_ROOT):
                 "source": "stub",
             }
     else:
-        from mistralai import Mistral
+        from mistralai.client import Mistral
         client = Mistral(api_key=os.environ.get("MISTRAL_API_KEY"))
         prompt = (
             "Extract from this security advisory, as JSON with keys id, package, "
@@ -288,34 +288,46 @@ def resume_pending(*, runs_root=RUNS_ROOT, **kw):
 
 # ---------------------------------------------------------------- hosted workflow (C1)
 
-def define_hosted_workflow():
-    """Build the mistralai-workflows class. Imported lazily so local mode never
-    touches Temporal config discovery."""
+# Define workflow at module level for mistralai-workflows discovery
+# Only imported when DEPLOYMENT_NAME is set (hosted mode)
+if os.environ.get("DEPLOYMENT_NAME"):
     import temporalio
     from mistralai.workflows import activity, workflow, get_execution_id
     from orchestrator.gate import gate
     from orchestrator.report import render_early_warning
 
+    @activity(start_to_close_timeout=timedelta(minutes=5),
+              retry_policy_max_attempts=1)
+    async def intake_activity(run_id: str, advisory_text: str) -> dict:
+        """File I/O activity: create run directory and write run.json"""
+        return intake(run_id, advisory_text, mode="hosted")
+
+    @activity(start_to_close_timeout=timedelta(minutes=1),
+              retry_policy_max_attempts=1)
+    async def set_status_activity(run_id: str, status: str) -> None:
+        """File I/O activity: update run.json status"""
+        return _set_status(run_id, status)
+
     @activity(start_to_close_timeout=timedelta(seconds=900),
               heartbeat_timeout=timedelta(seconds=60),
               retry_policy_max_attempts=1)
-    def triage_repo_activity(run_id, repo):
+    async def triage_repo_activity(run_id: str, repo: str) -> dict:
         return triage_one(run_id, repo)
 
     @activity(start_to_close_timeout=timedelta(seconds=300),
               retry_policy_max_attempts=1)
-    def read_advisory_activity(advisory_text, run_id):
+    async def read_advisory_activity(advisory_text: str, run_id: str) -> dict:
         return read_advisory(advisory_text, run_id)
 
     @activity(start_to_close_timeout=timedelta(hours=2),
               heartbeat_timeout=timedelta(seconds=60),
               retry_policy_max_attempts=1)
-    def verify_activity(run_id, verdicts):
+    async def verify_activity(run_id: str, verdicts: list) -> list:
         return gate(run_id, verdicts)
 
     @activity(start_to_close_timeout=timedelta(minutes=10),
               retry_policy_max_attempts=1)
-    def report_activity(run_id, gated):
+    async def report_activity(run_id: str, gated: list) -> str:
         return render_early_warning(run_id, gated)
 
     @workflow.define(name="le_chonk_run", execution_timeout=CLOCK)
@@ -324,13 +336,17 @@ def define_hosted_workflow():
             self.approved = False
 
         @workflow.signal(name="approve")
-        def on_approve(self):
+        def on_approve(self) -> None:
             self.approved = True
 
         @workflow.entrypoint
-        async def run(self, advisory_text: str):
+        async def run(self, advisory_text: str) -> dict:
             run_id = get_execution_id() or uuid.uuid4().hex[:12]
-            intake(run_id, advisory_text, mode="hosted")
+            
+            # File I/O moved to activities (Temporal sandbox safe)
+            await intake_activity(run_id, advisory_text)
+            await set_status_activity(run_id, "RUNNING")
+            
             advisory = await read_advisory_activity(advisory_text, run_id)
             repos = list_repos()
             # triage: one activity per repo, all in parallel, one attempt each
@@ -339,13 +355,21 @@ def define_hosted_workflow():
             ]))
             gated = await verify_activity(run_id, verdicts)
             report = await report_activity(run_id, gated)
-            # pause until a human sends "approve" (24 h timeout on the workflow)
+            
+            # Wait for approval
+            await set_status_activity(run_id, "AWAITING_APPROVAL")
             await workflow.wait_condition(lambda: self.approved, timeout=CLOCK,
                                           timeout_summary="approve_wait")
-            _set_status(run_id, "COMPLETED")
+            await set_status_activity(run_id, "COMPLETED")
             return {"run_id": run_id, "report": report}
 
-    return LeChonkRun
+
+def define_hosted_workflow():
+    """Build the mistralai-workflows class. Imported lazily so local mode never
+    touches Temporal config discovery."""
+    if os.environ.get("DEPLOYMENT_NAME"):
+        return LeChonkRun
+    raise RuntimeError("define_hosted_workflow() requires DEPLOYMENT_NAME to be set")
 
 
 # ---------------------------------------------------------------- entrypoint (C5)
