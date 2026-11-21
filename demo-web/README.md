@@ -29,3 +29,16 @@ cd /mnt/c/tmp/chonksweep && npx vercel deploy --prod --yes
 
 (`vercel.json` keeps the `chonksweep-demo.vercel.app` alias; first deploy
 created the project.)
+
+## Demo video
+
+`chonksweep-demo.mp4` (37 s, H.264, ~4 MB) — recorded headlessly (Playwright +
+Chrome) driving the deployed page end to end: paste advisory → agent fleet
+fills the 8-tile grid live → open the svc-02 hidden-route tile → replay the
+forged-JWS exploit (200 on authlib 1.8.0 / 401 on 1.9.0) → signed audit trail
+→ ENISA early-warning draft with the 24 h clock → approve. Also served at
+https://chonksweep-demo.vercel.app/chonksweep-demo.mp4
+
+Re-record: `node record.mjs` in a Windows-side copy of this dir with
+`playwright-core` (see /mnt/c/tmp/vid/record.mjs), then transcode webm→mp4
+with any ffmpeg (`-c:v libx264 -crf 21 -pix_fmt yuv420p -movflags +faststart`).
