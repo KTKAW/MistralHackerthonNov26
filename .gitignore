@@ -1,0 +1,20 @@
+# secrets — NEVER commit
+.env
+vibe-home/
+*.pem
+*.key
+
+# run artifacts
+runs/
+
+# offline packages (built locally per machine — see fleet/README.md)
+wheelhouse/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# os
+.DS_Store
