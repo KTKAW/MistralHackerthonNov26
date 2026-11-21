@@ -383,6 +383,70 @@ def create_app(runs_root=None) -> FastAPI:
         except (OSError, subprocess.SubprocessError) as e:
             raise HTTPException(status_code=500, detail=f"validator failed: {e}")
 
+    # ---------- playground + policy ----------
+
+    class Play(BaseModel):
+        cmd: str
+
+    def _scratch_dir() -> Path:
+        scratch = app.state.runs_root / "ui-scratch" / "play"
+        scratch.mkdir(parents=True, exist_ok=True)
+        return scratch
+
+    @app.post("/api/playground")
+    def playground(body: Play):
+        """Run one command through sandbox/douane with SANDBOX_WORKDIR at a scratch
+        dir under runs/ — the same rewrite the worker's shell hook applies."""
+        if not body.cmd or not body.cmd.strip():
+            raise HTTPException(status_code=400, detail="empty command")
+        if sys.platform != "darwin":
+            raise HTTPException(status_code=501, detail="playground needs macOS sandbox-exec")
+        douane = REPO_ROOT / "sandbox" / "douane"
+        if not douane.is_file():
+            raise HTTPException(status_code=500, detail="sandbox/douane missing")
+        scratch = _scratch_dir()
+        env = {
+            "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": os.environ.get("HOME", "/Users/" + os.getlogin()),
+            "SANDBOX_WORKDIR": str(scratch),
+            "SANDBOX_VIBE_HOME": str(REPO_ROOT / "vibe-home"),
+            "SANDBOX_PYTHON_DIR": os.environ.get(
+                "SANDBOX_PYTHON_DIR", str(Path.home() / ".local/share/uv/python")),
+            "HOOK_LOG": str(scratch / "hook.log"),
+        }
+        try:
+            res = subprocess.run([str(douane), body.cmd], env=env, cwd=str(scratch),
+                                 capture_output=True, text=True, timeout=30)
+            rc, out, err = res.returncode, res.stdout, res.stderr
+        except subprocess.TimeoutExpired:
+            rc, out, err = 124, "", "timed out after 30 s"
+        # append to the playground's own audit log
+        try:
+            with (scratch / "playground.log").open("a") as fh:
+                fh.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(),
+                                     "cmd": body.cmd, "rc": rc}) + "\n")
+        except OSError:
+            pass
+        blob = (err + out).lower()
+        denied = rc != 0 and any(k in blob for k in (
+            "denied", "deny", "not permitted", "sandbox", "could not resolve", "network"))
+        return {"cmd": body.cmd, "rc": rc, "stdout": out[-20_000:], "stderr": err[-20_000:],
+                "denied": denied}
+
+    @app.get("/api/policy")
+    def policy():
+        """The effective Seatbelt profile (as douane renders it for the scratch
+        dir) plus the douane wrapper source."""
+        scratch = _scratch_dir()
+        template = (REPO_ROOT / "sandbox" / "profile.sb.template").read_text()
+        rendered = (template
+                    .replace("__WORKDIR__", str(scratch))
+                    .replace("__PYDIR__", os.environ.get(
+                        "SANDBOX_PYTHON_DIR", str(Path.home() / ".local/share/uv/python")))
+                    .replace("__VIBEHOME__", str(REPO_ROOT / "vibe-home")))
+        douane_src = (REPO_ROOT / "sandbox" / "douane").read_text()
+        return {"profile": rendered, "douane": douane_src, "scratch": str(scratch)}
+
     @app.get("/")
     def index():
         return FileResponse(STATIC_DIR / "index.html")

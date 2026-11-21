@@ -304,5 +304,39 @@ $("#btn-back").addEventListener("click", () => {
   state.detail = null;
 });
 
+/* ---------- playground ---------- */
+async function runProbe(cmd) {
+  const out = $("#play-out");
+  out.innerHTML = `<span class="dim">$ douane '${esc(cmd)}' …</span>`;
+  try {
+    const r = await fetch("/api/playground", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmd }) });
+    const j = await r.json();
+    if (!r.ok) { out.innerHTML = `<span class="err">${esc(j.detail || r.statusText)}</span>`; return; }
+    const cls = j.rc === 0 ? "ok" : "err";
+    out.innerHTML = `<span class="${cls}">rc=${j.rc}${j.denied ? " — DENIED by sandbox" : ""}</span>\n\n` +
+      (j.stdout ? esc(j.stdout) + "\n" : "") +
+      (j.stderr ? `<span class="err">${esc(j.stderr)}</span>` : "");
+  } catch { out.textContent = "request failed"; }
+}
+document.querySelectorAll(".probe").forEach((b) =>
+  b.addEventListener("click", () => runProbe(b.dataset.cmd)));
+$("#play-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const cmd = $("#play-cmd").value;
+  if (cmd.trim()) runProbe(cmd);
+});
+
+/* ---------- policy tab ---------- */
+async function loadPolicy() {
+  const r = await fetch("/api/policy");
+  if (!r.ok) { $("#policy-profile").textContent = "failed to load"; return; }
+  const j = await r.json();
+  $("#policy-profile").textContent = j.profile + "\n;; scratch workdir: " + j.scratch;
+  $("#policy-douane").textContent = j.douane;
+}
+$("#btn-refresh-policy").addEventListener("click", loadPolicy);
+document.querySelector('[data-tab="policy"]').addEventListener("click", loadPolicy);
+
 health();
 startPolling();
