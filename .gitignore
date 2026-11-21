@@ -6,6 +6,7 @@ vibe-home/
 
 # run artifacts
 runs/
+!runs/demo-run-002/approved
 
 # offline packages (built locally per machine — see fleet/README.md)
 wheelhouse/
