@@ -62,6 +62,20 @@ Composition: 4 affected (svc-01, svc-02, svc-03, svc-08 — one of them the hidd
 case svc-02), 4 unaffected (svc-04…svc-07). Every install resolves fully offline
 with `--no-index --find-links ../../wheelhouse`.
 
+### Re-verification (2026-11-21, automated re-run of the whole matrix)
+
+All 8 services re-verified end-to-end on this machine, fully offline: fresh
+`uv venv --python 3.12`, `uv pip install --no-index --find-links ../../wheelhouse
+-r requirements.txt`, suite on 1.8.0, `proof/verify_trigger.py` on 1.8.0, upgrade
+to `authlib==1.9.0` from the same wheelhouse, proof + suite again. Results matched
+the matrix above exactly: svc-01/02/03/08 TRIGGERED on 1.8.0 (forged token accepted)
+and REJECTED (401) on 1.9.0; svc-04/05 REJECTED on both; svc-06/07 have no
+verification endpoint (no trigger on either); every suite passed on both
+versions (3 passed for svc-01…05/08, 2 passed for svc-06/07). The library-level
+premise (empty-`signatures` JSON JWS accepted on 1.8.0, `BadSignatureError` on
+1.9.0) is additionally pinned as an automated test in `tests/test_cve_premise.py`
+(run `uv run pytest -q` from the repo root).
+
 ## Scope rules honoured
 
 - Proof inputs are harmless: a forged token that our own demo service accepts and echoes.
