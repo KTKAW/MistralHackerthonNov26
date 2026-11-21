@@ -1,0 +1,21 @@
+# Secrets - never commit (the Mistral API key lives in a .env inside the Vibe home)
+.env
+**/.env
+vibe-home/
+
+# Run artifacts: work copies, verdicts, exports
+runs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
