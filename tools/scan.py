@@ -9,6 +9,7 @@ Usage:
   python3 tools/scan.py report --json REPORT [--out advisories/scan-latest.md] [--watch SECS]
   python3 tools/scan.py brief  --json REPORT [--sync-json sync.json] [--out brief.txt] [--speak]
   python3 tools/scan.py audio-loop --json REPORT [--sync-json sync.json] [--interval 60] [--once] [--listen]
+  python3 tools/scan.py query ENDPOINT [--port 8787] [--tier N] [--token-env KB_SCAN_QUERY_TOKEN] [--speak]
   python3 tools/scan.py selftest
   python3 tools/scan.py feeds
 
@@ -33,6 +34,12 @@ appended to tools/scan/out/audio-loop.log). `--once` does a single check; `--lis
 (voxtral-realtime transcription; speaks the current brief when the question mentions threat/scan/brief/new).
 Tests can set KB_SCAN_SPEAK_STUB to a script that receives the spoken text on stdin instead of calling the API.
 
+`query` reads the live loopback API of a running `kb-scan serve` (health|latest|sync|findings|brief): it GETs
+http://127.0.0.1:<port>/<endpoint> (findings also takes ?tier=N via --tier), prints the body, exits 3 on a
+non-200 status, and sends `Authorization: Bearer` from the env var named by --token-env (default
+KB_SCAN_QUERY_TOKEN when set) without ever printing the token. `--speak` speaks the /brief body, or one alert
+per finding, via the same speak() helper.
+
 The binary is resolved in order: $KB_SCAN_BIN, then tools/scan/target/x86_64-unknown-linux-musl/release/kb-scan,
 then `cargo build --release --target x86_64-unknown-linux-musl` (needs export PATH=$HOME/.cargo/bin:$PATH).
 Without cargo the wrapper exits 2 with install instructions. See tools/scan/ORCHESTRATION.md for the pinned CLI
@@ -41,7 +48,10 @@ and JSON schemas. The engine only reports; a person acts on what it finds. Run t
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import http.server
+import io
 import json
 import os
 import re
@@ -49,8 +59,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -101,14 +113,25 @@ BRIEF_MAX_WORDS = 90
 BRIEF_CLOSER = "A person approves before anything is sent."
 ALERT_MAX_WORDS = 40
 QUESTION_WORDS = ("threat", "scan", "brief", "new")
+# Local query API (kb-scan serve): loopback only, read-only GET endpoints.
+QUERY_ENDPOINTS = ("health", "latest", "sync", "findings", "brief")
+QUERY_DEFAULT_PORT = 8787
+QUERY_TIMEOUT_SECS = 30
+QUERY_DEFAULT_TOKEN_ENV = "KB_SCAN_QUERY_TOKEN"
 # audio-loop state and log; module-level so tests can point them at a temp dir.
 AUDIO_STATE_FILE = SCAN_DIR / "out" / "audio-loop-state.json"
 AUDIO_LOG_FILE = SCAN_DIR / "out" / "audio-loop.log"
 
 
 def clean(value: object) -> str:
-    """Feed text is data. Collapse whitespace and drop square brackets so it cannot form markdown links."""
-    return " ".join(str(value).replace("[", "(").replace("]", ")").split())
+    """Feed text is data. Collapse whitespace, drop square brackets so it cannot form markdown
+    links, and HTML-escape < > & so injected markup cannot survive into a rendered page."""
+    return (
+        " ".join(str(value).replace("[", "(").replace("]", ")").split())
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
 
 # ---------------------------------------------------------------- binary resolution
@@ -539,8 +562,9 @@ def render_brief(report: dict, sync_report: dict | None = None) -> str:
     """Render a deterministic spoken-style brief of at most BRIEF_MAX_WORDS words from a kb-scan-report/1."""
     if report.get("schema") != "kb-scan-report/1":
         raise ValueError(f"not a kb-scan-report/1 document (schema: {report.get('schema')!r})")
-    top = [f for f in report.get("findings", []) if f.get("tier") in (1, 2)]
-    top.sort(key=lambda f: (f.get("tier", 9), not _verified(f), clean(f.get("id", ""))))
+    # Top verified tier 1/2 findings only (unverified/unconfirmed leads excluded) — matches serve.rs.
+    top = [f for f in report.get("findings", []) if f.get("tier") in (1, 2) and _verified(f)]
+    top.sort(key=lambda f: (f.get("tier", 9), clean(f.get("id", ""))))
     header = f"Scan brief {clean(report.get('generated_at', ''))[:10] or 'undated'}."
     body = [_finding_line(f) for f in top]
     if sync_report is not None:
@@ -814,6 +838,55 @@ def cmd_audio_loop(args: argparse.Namespace) -> int:
         return 0
 
 
+# ---------------------------------------------------------------- query (kb-scan serve)
+
+
+def cmd_query(args: argparse.Namespace) -> int:
+    """GET http://127.0.0.1:<port>/<endpoint> from a running `kb-scan serve` and print the body.
+
+    The bearer token is read from the named env var and sent as Authorization only — never printed.
+    Non-200 responses exit 3 with the status."""
+    url = f"http://127.0.0.1:{args.port}/{args.endpoint}"
+    if args.endpoint == "findings" and args.tier is not None:
+        url += f"?tier={args.tier}"
+    headers = {}
+    token_env = args.token_env or QUERY_DEFAULT_TOKEN_ENV
+    token = os.environ.get(token_env)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    elif args.token_env:
+        print(f"environment variable {args.token_env} is not set", file=sys.stderr)
+        return 2
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=QUERY_TIMEOUT_SECS) as response:
+            body = response.read(MAX_SPEECH_BYTES).decode("utf-8", "replace")
+    except urllib.error.HTTPError as error:
+        print(f"query failed: HTTP {error.code} for {url}", file=sys.stderr)
+        return 3
+    except OSError as error:
+        print(f"query failed: {error}", file=sys.stderr)
+        return 3
+    sys.stdout.write(body if body.endswith("\n") else body + "\n")
+    if not args.speak:
+        return 0
+    if args.endpoint == "brief":
+        return speak(body)
+    if args.endpoint == "findings":
+        try:
+            data = json.loads(body)
+        except ValueError as error:
+            print(f"could not parse the findings response: {error}", file=sys.stderr)
+            return 2
+        findings = data if isinstance(data, list) else data.get("findings", [])
+        for finding in findings:
+            code = speak(_alert_line(finding))
+            if code != 0:
+                return code
+        return 0
+    return speak(f"kb-scan {args.endpoint}: ok.")
+
+
 # ---------------------------------------------------------------- selftest
 
 
@@ -862,22 +935,26 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         "findings": [
             {"tier": 2, "kind": "kev", "id": "CVE-2021-44228", "cve": "CVE-2021-44228",
              "summary": "Log4Shell [RCE] in Apache Log4j. Second sentence.", "product": "Apache Log4j",
-             "playbook": "exploited-vulnerability"},
+             "fixed_in": "2.17.1", "playbook": "exploited-vulnerability"},
             {"tier": 1, "kind": "malware", "id": "MAL-2026-0001", "summary": "Poisoned release.",
              "package": "npm evil-pkg", "status": "confirmed", "playbook": "malicious-dependency"},
             {"tier": 2, "kind": "kev", "id": "CVE-2020-0001", "summary": "Old flaw.", "product": "Exchange Server",
              "status": "unverified", "fixed_in": "CU 23", "playbook": "exploited-vulnerability"},
+            {"tier": 1, "kind": "malware", "id": "MAL-2026-0002", "summary": "Unconfirmed lead.",
+             "package": "npm other-pkg", "status": "unconfirmed", "playbook": "malicious-dependency"},
         ],
-        "stats": {"packages": 3, "cves": 1, "findings": 3, "errors": []},
+        "stats": {"packages": 3, "cves": 1, "findings": 4, "errors": []},
     }
     brief = render_brief(brief_sample, {"attention": ["new branch [x] appeared"]})
     check("brief stays within 90 words and ends with the closer",
           len(brief.split()) <= 90 and brief.rstrip("\n").endswith(BRIEF_CLOSER))
-    check("brief sanitises feed text and keeps one line per finding",
-          "(RCE)" in brief and "(x)" in brief and brief.count("we run") == 3)
-    check("brief orders by tier then verified status",
-          brief.index("MAL-2026-0001") < brief.index("CVE-2021-44228") < brief.index("CVE-2020-0001"))
-    check("brief names the patch target when known", "patch CU 23" in brief)
+    check("brief sanitises feed text and keeps one line per verified finding",
+          "(RCE)" in brief and "(x)" in brief and brief.count("we run") == 2)
+    check("brief orders by tier, verified findings only",
+          brief.index("MAL-2026-0001") < brief.index("CVE-2021-44228"))
+    check("brief excludes unverified/unconfirmed findings",
+          "CVE-2020-0001" not in brief and "MAL-2026-0002" not in brief)
+    check("brief names the patch target when known", "patch 2.17.1" in brief)
     check("brief is deterministic", brief == render_brief(brief_sample, {"attention": ["new branch [x] appeared"]}))
     try:
         render_brief({"schema": "nope"})
@@ -941,6 +1018,88 @@ def cmd_selftest(args: argparse.Namespace) -> int:
             os.environ.pop("MISTRAL_API_KEY", None)
         else:
             os.environ["MISTRAL_API_KEY"] = old_key
+
+    canned_brief = "Scan brief 2026-11-21.\nA person approves before anything is sent.\n"
+    query_finding = {"tier": 2, "kind": "kev", "id": "CVE-2021-44228",
+                     "summary": "Log4Shell remote code execution.", "product": "Apache Log4j"}
+    seen: list[tuple[str, str | None]] = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append((self.path, self.headers.get("Authorization")))
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/health":
+                body = json.dumps({"status": "ok"}).encode("utf-8")
+                ctype = "application/json"
+            elif parsed.path == "/findings":
+                tier = urllib.parse.parse_qs(parsed.query).get("tier", [None])[0]
+                body = json.dumps({"tier": tier, "findings": [query_finding]}).encode("utf-8")
+                ctype = "application/json"
+            elif parsed.path == "/brief":
+                body = canned_brief.encode("utf-8")
+                ctype = "text/plain"
+            else:
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"not found")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    query_port = server.server_address[1]
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cmd_query(argparse.Namespace(endpoint="health", port=query_port, tier=None, token_env=None, speak=False))
+        check("query prints the endpoint body", rc == 0 and json.loads(buf.getvalue()) == {"status": "ok"})
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cmd_query(argparse.Namespace(endpoint="findings", port=query_port, tier=2, token_env=None, speak=False))
+        check("query findings passes ?tier=N through",
+              rc == 0 and any(path == "/findings?tier=2" for path, _ in seen) and '"tier": "2"' in buf.getvalue())
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cmd_query(argparse.Namespace(endpoint="sync", port=query_port, tier=None, token_env=None, speak=False))
+        check("query exits 3 on a non-200 response", rc == 3)
+
+        os.environ["KB_SCAN_TEST_QUERY_TOKEN"] = "test-token-abc123"
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cmd_query(argparse.Namespace(endpoint="health", port=query_port, tier=None,
+                                                 token_env="KB_SCAN_TEST_QUERY_TOKEN", speak=False))
+            check("query sends the bearer token from --token-env and never prints it",
+                  rc == 0 and any(auth == "Bearer test-token-abc123" for _, auth in seen)
+                  and "test-token-abc123" not in buf.getvalue())
+        finally:
+            del os.environ["KB_SCAN_TEST_QUERY_TOKEN"]
+
+        stub_log2 = tmpdir / "speak-stub2.log"
+        stub2 = tmpdir / "speak-stub2"
+        stub2.write_text(f"#!/bin/sh\ncat >> {stub_log2}\n", encoding="utf-8")
+        stub2.chmod(0o755)
+        old_stub2 = os.environ.get("KB_SCAN_SPEAK_STUB")
+        os.environ["KB_SCAN_SPEAK_STUB"] = str(stub2)
+        try:
+            rc = cmd_query(argparse.Namespace(endpoint="brief", port=query_port, tier=None, token_env=None, speak=True))
+            check("query --speak speaks the /brief body via the stub",
+                  rc == 0 and canned_brief in stub_log2.read_text(encoding="utf-8"))
+        finally:
+            if old_stub2 is None:
+                os.environ.pop("KB_SCAN_SPEAK_STUB", None)
+            else:
+                os.environ["KB_SCAN_SPEAK_STUB"] = old_stub2
+    finally:
+        server.shutdown()
 
     stub = Path(tempfile.mkdtemp()) / "kb-scan-stub"
     stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -1048,6 +1207,14 @@ def main() -> int:
     audio_loop.add_argument("--once", action="store_true", help="do a single check and exit (for tests/cron)")
     audio_loop.add_argument("--listen", action="store_true", help="voice query loop: transcribe mic input and speak the brief on question words")
     audio_loop.set_defaults(func=cmd_audio_loop)
+
+    query = sub.add_parser("query", help="GET a read-only endpoint from a running `kb-scan serve` and print the body")
+    query.add_argument("endpoint", choices=sorted(QUERY_ENDPOINTS), help="one of health, latest, sync, findings, brief")
+    query.add_argument("--port", type=int, default=QUERY_DEFAULT_PORT, help=f"serve port (default {QUERY_DEFAULT_PORT})")
+    query.add_argument("--tier", type=int, help="for findings: pass ?tier=N")
+    query.add_argument("--token-env", help=f"env var holding the bearer token (default {QUERY_DEFAULT_TOKEN_ENV} when set)")
+    query.add_argument("--speak", action="store_true", help="speak the /brief body, or one alert per finding")
+    query.set_defaults(func=cmd_query)
 
     selftest = sub.add_parser("selftest", help="check the wrapper itself, and the engine binary when it is available")
     selftest.set_defaults(func=cmd_selftest)

@@ -36,8 +36,9 @@ USAGE:
   kb-scan version
   kb-scan self-test
   kb-scan feeds
-  kb-scan sync   [--repo DIR] [--out FILE] [--pretty]
+  kb-scan sync   [--repo DIR] [--out FILE] [--pretty] [--allow-unsandboxed]
   kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max-filesize BYTES]
+                 [--allow-unsandboxed]
   kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
                  [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME]
                  [--allow-unsandboxed]
@@ -298,6 +299,7 @@ fn cmd_self_test() -> i32 {
     ecfg.explore.queries_file = qfile.to_str().unwrap().to_string();
     ecfg.explore.agent_cmd = vec!["sh".to_string(), stub.clone()];
     ecfg.explore.agent_prompt_file = format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR"));
+    ecfg.explore.sandbox_cmd = vec!["sh".to_string(), format!("{}/tests/passthrough-sandbox.sh", env!("CARGO_MANIFEST_DIR"))];
     let mut rotation = 0usize;
     let mut rng = explore::Rng::new(7);
     let explore_ok = explore::run_cycle(&ecfg, &edir, &mut rotation, &mut rng)
@@ -320,8 +322,46 @@ fn cmd_self_test() -> i32 {
     }
 }
 
+/// Sandbox gate for one-shot network commands (scan/sync): fail closed unless
+/// sandbox_cmd is set or --allow-unsandboxed is passed; when sandbox_cmd is
+/// set, re-exec this very command under the wrapper (argv array, no shell,
+/// guarded by KB_SCAN_IN_SANDBOX so it happens exactly once).
+fn sandbox_gate_reexec(cfg: &config::Config, network: &[String], allow_unsandboxed: bool, args: &[String]) -> Option<i32> {
+    if let Err(code) = merge::require_sandbox(&cfg.sandbox_cmd, network, allow_unsandboxed) {
+        return Some(code);
+    }
+    if cfg.sandbox_cmd.is_empty() || std::env::var("KB_SCAN_IN_SANDBOX").is_ok() {
+        return None; // gate passed; nothing to wrap (or already inside)
+    }
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("kb-scan: cannot locate current exe for sandbox re-exec: {}", e);
+            return Some(2);
+        }
+    };
+    let mut argv: Vec<String> = cfg.sandbox_cmd.clone();
+    argv.push(exe.to_string_lossy().into_owned());
+    argv.extend(args.iter().cloned());
+    eprintln!("kb-scan: re-exec under sandbox_cmd for network command {:?}", args[0]);
+    let status = std::process::Command::new(&argv[0])
+        .args(&argv[1..])
+        .env("KB_SCAN_IN_SANDBOX", "1")
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status();
+    match status {
+        Ok(s) => Some(s.code().unwrap_or(3)),
+        Err(e) => {
+            eprintln!("kb-scan: sandbox re-exec failed: {}", e);
+            Some(2)
+        }
+    }
+}
+
 fn cmd_sync(args: &[String]) -> i32 {
-    let flags = match parse_flags(args, &["repo", "out", "pretty"]) {
+    let flags = match parse_flags(args, &["repo", "out", "pretty", "allow-unsandboxed"]) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("kb-scan sync: {}", e);
@@ -329,6 +369,13 @@ fn cmd_sync(args: &[String]) -> i32 {
             return 2;
         }
     };
+    // sync performs network I/O (git fetch) — same fail-closed sandbox rule
+    let sync_cfg = config::load_config("").unwrap_or_default();
+    let mut full_args = vec!["sync".to_string()];
+    full_args.extend(args.iter().cloned());
+    if let Some(code) = sandbox_gate_reexec(&sync_cfg, &["sync".to_string()], flags.bool("allow-unsandboxed"), &full_args) {
+        return code;
+    }
     let repo = flags.get("repo").unwrap_or(".");
     let pretty = flags.bool("pretty");
     let remote = config::load_config("")
@@ -352,7 +399,7 @@ fn cmd_sync(args: &[String]) -> i32 {
 }
 
 fn cmd_scan(args: &[String]) -> i32 {
-    let flags = match parse_flags(args, &["config", "inventory", "out", "pretty", "max-filesize"]) {
+    let flags = match parse_flags(args, &["config", "inventory", "out", "pretty", "max-filesize", "allow-unsandboxed"]) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("kb-scan scan: {}", e);
@@ -368,6 +415,31 @@ fn cmd_scan(args: &[String]) -> i32 {
             return 2;
         }
     };
+    // scan performs network I/O (feeds) — same fail-closed sandbox rule
+    let network: Vec<String> = {
+        let mut v = Vec::new();
+        if cfg.feeds.kev {
+            v.push("kev".to_string());
+        }
+        if cfg.feeds.osv {
+            v.push("osv".to_string());
+        }
+        if cfg.feeds.github {
+            v.push("github".to_string());
+        }
+        if cfg.feeds.epss {
+            v.push("epss".to_string());
+        }
+        if cfg.feeds.nvd {
+            v.push("nvd".to_string());
+        }
+        v
+    };
+    let mut full_args = vec!["scan".to_string()];
+    full_args.extend(args.iter().cloned());
+    if let Some(code) = sandbox_gate_reexec(&cfg, &network, flags.bool("allow-unsandboxed"), &full_args) {
+        return code;
+    }
     let mut cfg = cfg;
     if let Ok(Some(m)) = flags.u64("max-filesize") {
         cfg.max_body_bytes = m as usize;

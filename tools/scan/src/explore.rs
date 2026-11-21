@@ -111,6 +111,10 @@ pub struct CycleSummary {
 /// One explore cycle. `out_dir` is the shard's own out dir.
 pub fn run_cycle(cfg: &Config, out_dir: &Path, rotation: &mut usize, rng: &mut Rng) -> Result<CycleSummary, String> {
     let ec = &cfg.explore;
+    // FAIL CLOSED: spawned LLM agents are always sandboxed — no override exists.
+    if ec.enabled && ec.sandbox_cmd.is_empty() {
+        return Err("agent spawning requires sandbox_cmd — no override".to_string());
+    }
     let explore_dir = out_dir.join("explore");
     let agents_dir = explore_dir.join("agents");
     std::fs::create_dir_all(&agents_dir).map_err(|e| format!("cannot create {:?}: {}", agents_dir, e))?;

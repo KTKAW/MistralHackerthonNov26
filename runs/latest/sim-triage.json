@@ -1,0 +1,84 @@
+{
+  "schema": "sim-triage/1",
+  "simulated": true,
+  "marker": "SIMULATED",
+  "run_id": "latest",
+  "generated_at": "2026-11-21T15:19:50Z",
+  "out_dir": "tools/scan/out/simulate",
+  "note": "SIMULATED adversarial triage for the Le Chonk workflow; not real threat data.",
+  "assertions": [
+    {
+      "id": "a",
+      "name": "no simulated finding is ever status confirmed",
+      "passed": true,
+      "detail": "confirmed simulated findings: []"
+    },
+    {
+      "id": "b",
+      "name": "tier-1 fake MAL- stays tier 1 but unverified and sorts below real verified",
+      "passed": true,
+      "detail": "tier=1 status=unverified idx=4 verified_idx=[0] tier1=['MAL-2026-9999']"
+    },
+    {
+      "id": "c",
+      "name": "markdown has no raw <script>, no injected markdown link (clean() applied), has SIMULATED markers; merged JSON HTML-escapes the payload",
+      "passed": true,
+      "detail": "md_script=False md_link=False marker=True json_escaped=True"
+    },
+    {
+      "id": "d",
+      "name": "serve /brief and brief-sim.txt exclude all unverified/simulated findings",
+      "passed": true,
+      "detail": "leaked fake ids: []"
+    },
+    {
+      "id": "e",
+      "name": "audio-loop stub log contains NO alert for unverified/simulated findings",
+      "passed": true,
+      "detail": "leaking lines: []; alerts spoken: True"
+    },
+    {
+      "id": "f",
+      "name": "injected URLs never appear as request targets; engine allowlist is code-pinned to the 5 feed hosts",
+      "passed": true,
+      "detail": "allowlist=['www.cisa.gov', 'api.osv.dev', 'api.github.com', 'services.nvd.nist.gov', 'api.first.org'] contacted_injected=[]"
+    },
+    {
+      "id": "g",
+      "name": "python3 tools/lint.py on the repo as-is exits 0",
+      "passed": true,
+      "detail": "lint exit 0: 43 sources, 11 concepts, 8 playbooks, 12 advisories, 2 feed snapshots: 0 errors, 0 warnings"
+    },
+    {
+      "id": "h",
+      "name": "quarantine: real latest.json/latest-sync.json/triage.json contain NO SIMULATED markers",
+      "passed": true,
+      "detail": "SIMULATED markers leaked into real outputs: [] (checked 0 file(s))"
+    }
+  ],
+  "defenses": {
+    "fake_count": 25,
+    "fakes_generated": 25,
+    "rejected": 25,
+    "misses": [],
+    "downgraded": 25,
+    "injected_payloads_neutralised": 4,
+    "verdicts_validated": 0,
+    "breaches": []
+  },
+  "metrics": {
+    "cycle": {
+      "fakes_generated": 25,
+      "rejected": 25,
+      "misses": [],
+      "downgraded": 25,
+      "injected_payloads_neutralised": 4,
+      "verdicts_validated": 0
+    },
+    "cumulative": {
+      "fakes_generated": 25,
+      "rejected": 25,
+      "misses": []
+    }
+  }
+}

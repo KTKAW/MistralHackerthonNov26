@@ -154,12 +154,17 @@ under `sandbox_cmd` (argv array, never a shell) with the same args plus
 **Fail-closed:** if any network shard is enabled and `sandbox_cmd` is empty,
 `swarm` and `watch` exit **2** with
 `network shards require sandbox_cmd (bwrap) — set it in config or pass --allow-unsandboxed for local debugging only`.
-`--allow-unsandboxed` (on `swarm` and `watch`) bypasses the check for local
-debugging only and logs a loud stderr warning; the supervisor propagates it to
-shard children. `explore`/`verify` agent spawning is sandboxed separately via
-`explore.sandbox_cmd` / `verify.sandbox_cmd` and is never wrapped by the
-top-level `sandbox_cmd`; agent spawns have no override. Tests prove wrapping
-with `tests/passthrough-sandbox.sh`, a wrapper that logs its argv and execs.
+`--allow-unsandboxed` (on `swarm`, `watch`, and the one-shot `scan`/`sync`)
+bypasses the check for local debugging only and logs a loud stderr warning;
+the supervisor propagates it to shard children. When `sandbox_cmd` is set,
+one-shot `scan`/`sync` re-exec themselves under the wrapper (argv array, no
+shell, guarded by `KB_SCAN_IN_SANDBOX`). `explore`/`verify` agent spawning is
+sandboxed separately via `explore.sandbox_cmd` / `verify.sandbox_cmd` and is
+**fail-closed with no override**: if empty, the shard exits 2 with
+`agent spawning requires sandbox_cmd — no override` (even with
+`--allow-unsandboxed`), and agents are never wrapped by the top-level
+`sandbox_cmd`. Tests prove wrapping with `tests/passthrough-sandbox.sh`, a
+wrapper that logs its argv and execs.
 
 ### Swarm isolation model
 

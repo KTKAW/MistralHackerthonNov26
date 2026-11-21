@@ -74,6 +74,10 @@ pub struct CycleSummary {
 /// (<supervisor-out>/shards/verify).
 pub fn run_cycle(cfg: &Config, shard_out: &Path) -> Result<CycleSummary, String> {
     let vc = &cfg.verify;
+    // FAIL CLOSED: spawned LLM agents are always sandboxed — no override exists.
+    if vc.enabled && vc.sandbox_cmd.is_empty() {
+        return Err("agent spawning requires sandbox_cmd — no override".to_string());
+    }
     let verify_dir = shard_out.join("verify");
     let agents_dir = verify_dir.join("agents");
     std::fs::create_dir_all(&agents_dir).map_err(|e| format!("cannot create {:?}: {}", agents_dir, e))?;

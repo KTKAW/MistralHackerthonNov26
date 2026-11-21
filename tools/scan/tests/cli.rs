@@ -248,11 +248,12 @@ fn explore_shard_with_stub_agent() {
         format!(
             "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
              \"explore\": {{\"enabled\": true, \"max_per_cycle\": 2, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \
-             \"agent_prompt_file\": {:?}}}}}",
+             \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}}}",
             inv_path.to_str().unwrap(),
             qfile.to_str().unwrap(),
             stub_cmd(),
             format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
         ),
     )
     .unwrap();
@@ -312,10 +313,11 @@ fn verify_shard_with_stub_agent() {
         &cfg_path,
         format!(
             "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
-             \"verify\": {{\"enabled\": true, \"max_per_cycle\": 10, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+             \"verify\": {{\"enabled\": true, \"max_per_cycle\": 10, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}}}",
             inv_path.to_str().unwrap(),
             stub_cmd(),
             format!("{}/verify-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
         ),
     )
     .unwrap();
@@ -353,15 +355,17 @@ fn swarm_writes_triage_handoff() {
         &cfg_path,
         format!(
             "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"workflow_root\": {:?}, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
-             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}, \
-             \"verify\": {{\"enabled\": true, \"max_per_cycle\": 5, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}, \
+             \"verify\": {{\"enabled\": true, \"max_per_cycle\": 5, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}}}",
             inv_path.to_str().unwrap(),
             dir.join("runs").to_str().unwrap(),
             qfile.to_str().unwrap(),
             stub_cmd(),
             format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
             stub_cmd(),
             format!("{}/verify-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
         ),
     )
     .unwrap();
@@ -432,18 +436,19 @@ fn swarm_passthrough_sandbox_wraps_network_shards_only() {
     let inv_path = dir.join("inventory.json");
     std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
     // top-level sandbox_cmd wraps network shard children; explore.sandbox_cmd
-    // is NOT set, so agent spawns must NOT go through the top-level wrapper.
+    // wraps agent spawns (fail-closed: it must be set for explore to run).
     std::fs::write(
         &cfg_path,
         format!(
             "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"sandbox_cmd\": [\"sh\", {:?}], \
              \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
-             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}}}",
             inv_path.to_str().unwrap(),
             sandbox_wrapper(),
             qfile.to_str().unwrap(),
             stub_cmd(),
             format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
         ),
     )
     .unwrap();
@@ -456,11 +461,11 @@ fn swarm_passthrough_sandbox_wraps_network_shards_only() {
     let code = o.status.code().unwrap_or(-1);
     assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
     let marker_text = std::fs::read_to_string(&marker).unwrap_or_default();
-    // the sync shard child was re-exec'd through the wrapper: argv logged
+    // the sync shard child was re-exec'd through the top-level wrapper
     assert!(marker_text.contains("watch --shard sync"), "marker: {}", marker_text);
-    // agent spawns never use the top-level sandbox wrapper
-    assert!(!marker_text.contains("stub-agent"), "marker: {}", marker_text);
-    // ...but the explore shard still ran (agent spawned via its own cmd)
+    // agent spawns are wrapped by explore.sandbox_cmd (fail-closed)
+    assert!(marker_text.contains("stub-agent"), "marker: {}", marker_text);
+    // ...and the explore shard still ran
     assert!(out.join("shards").join("explore").join("leads.json").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -520,11 +525,12 @@ fn watch_full_pipeline_without_sandbox_fails_closed() {
     std::fs::write(
         &cfg2,
         format!(
-            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}}}",
             dir.join("inventory.json").to_str().unwrap(),
             qfile.to_str().unwrap(),
             stub_cmd(),
             format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
         ),
     )
     .unwrap();
@@ -696,6 +702,116 @@ fn serve_non_loopback_refused_without_flag() {
         .unwrap();
     assert_eq!(o.status.code().unwrap_or(-1), 2);
     assert!(String::from_utf8_lossy(&o.stderr).contains("refusing non-loopback bind"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn agent_spawning_without_sandbox_cmd_fails_closed() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it18-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let qfile = dir.join("q.txt");
+    std::fs::write(&qfile, "q | h\n").unwrap();
+    let inv_path = dir.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    // explore enabled but NO explore.sandbox_cmd -> exit 2, no override path
+    let cfg_path = dir.join("config.json");
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+            inv_path.to_str().unwrap(),
+            qfile.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+        ),
+    )
+    .unwrap();
+    // even --allow-unsandboxed must NOT bypass agent sandboxing
+    let (code, _, stderr) = run(&[
+        "watch", "--config", cfg_path.to_str().unwrap(), "--out-dir", dir.join("w").to_str().unwrap(),
+        "--shard", "explore", "--max-runs", "1", "--interval", "1", "--allow-unsandboxed",
+    ]);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("agent spawning requires sandbox_cmd — no override"), "stderr: {}", stderr);
+    // with the passthrough wrapper as explore.sandbox_cmd it runs and the marker proves wrapping
+    let marker = dir.join("marker.log");
+    let cfg2 = dir.join("config2.json");
+    std::fs::write(
+        &cfg2,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}}}",
+            inv_path.to_str().unwrap(),
+            qfile.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
+        ),
+    )
+    .unwrap();
+    let o = Command::new(BIN)
+        .args(["watch", "--config", cfg2.to_str().unwrap(), "--out-dir", dir.join("w2").to_str().unwrap(), "--shard", "explore", "--max-runs", "1", "--interval", "1"])
+        .env("KB_SCAN_SANDBOX_MARKER", &marker)
+        .output()
+        .unwrap();
+    let code2 = o.status.code().unwrap_or(-1);
+    assert!(code2 == 0 || code2 == 3, "code2={} stderr={}", code2, String::from_utf8_lossy(&o.stderr));
+    let marker_text = std::fs::read_to_string(&marker).unwrap_or_default();
+    assert!(marker_text.contains("stub-agent"), "marker: {}", marker_text);
+    assert!(dir.join("w2").join("leads.json").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn scan_and_sync_pass_sandbox_gate() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it19-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let inv_path = dir.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    // config with a network feed enabled and NO sandbox_cmd
+    let cfg_path = dir.join("config.json");
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"feeds\": {{\"kev\": true, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}}}",
+            inv_path.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    // scan without sandbox_cmd -> exit 2
+    let (code, _, stderr) = run(&["scan", "--config", cfg_path.to_str().unwrap()]);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("network shards require sandbox_cmd"), "stderr: {}", stderr);
+    // sync (git fetch = network) without sandbox_cmd -> exit 2
+    let (code, _, stderr) = run(&["sync", "--repo", "."]);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("network shards require sandbox_cmd"), "stderr: {}", stderr);
+    // with --allow-unsandboxed they run (loud warning)
+    let (code, _, stderr) = run(&["sync", "--repo", ".", "--allow-unsandboxed"]);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, stderr);
+    assert!(stderr.contains("WITHOUT a sandbox"), "stderr: {}", stderr);
+    // with sandbox_cmd wrapper, the one-shot command re-execs under it (marker proves it)
+    let marker = dir.join("marker.log");
+    let cfg2 = dir.join("config2.json");
+    std::fs::write(
+        &cfg2,
+        format!(
+            "{{\"inventory\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}], \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}}}",
+            inv_path.to_str().unwrap(),
+            sandbox_wrapper(),
+        ),
+    )
+    .unwrap();
+    let o = Command::new(BIN)
+        .args(["scan", "--config", cfg2.to_str().unwrap()])
+        .env("KB_SCAN_SANDBOX_MARKER", &marker)
+        .output()
+        .unwrap();
+    let code = o.status.code().unwrap_or(-1);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
+    let marker_text = std::fs::read_to_string(&marker).unwrap_or_default();
+    assert!(marker_text.contains("scan"), "marker: {}", marker_text);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

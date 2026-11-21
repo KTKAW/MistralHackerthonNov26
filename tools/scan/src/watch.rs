@@ -179,6 +179,16 @@ pub fn run_watch(args: &WatchArgs) -> i32 {
     let do_explore = shard.as_deref() == Some("explore");
     let do_verify = shard.as_deref() == Some("verify");
 
+    // FAIL CLOSED: spawned LLM agents are always sandboxed — no override.
+    if do_explore && effective_cfg.explore.sandbox_cmd.is_empty() {
+        eprintln!("kb-scan: agent spawning requires sandbox_cmd — no override");
+        return 2;
+    }
+    if do_verify && effective_cfg.verify.sandbox_cmd.is_empty() {
+        eprintln!("kb-scan: agent spawning requires sandbox_cmd — no override");
+        return 2;
+    }
+
     // FAIL CLOSED: this watch invocation performs network I/O (sync and/or
     // feeds) and must run under sandbox_cmd — the swarm supervisor re-execs
     // network shard children under the top-level sandbox_cmd, so a directly

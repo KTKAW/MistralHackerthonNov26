@@ -102,3 +102,9 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - README.md
 - feeds.md
 - tools/ (14 files)
+
+## [2026-11-21] edit | Adversarial simulator (simulate.py, 8/8 defenses PASS), review fixes, HTML-escape in renderer, gate patch spec
+
+- README.md
+- feeds.md
+- tools/ (14 files)

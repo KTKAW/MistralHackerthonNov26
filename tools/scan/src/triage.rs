@@ -19,13 +19,19 @@ pub fn tier_for(is_malware: bool, in_kev: bool, high_severity: bool, epss: Optio
     }
 }
 
-/// Playbook for a finding. Tiers 1 and 2 are pinned by the triage order;
-/// for tiers 3/4 a package (library) match routes to the fleet triage run.
+/// Playbook for a finding. Tier-1 malware always routes to
+/// malicious-dependency (precedence). Any package/library match routes to
+/// advisory-fleet-triage (the Le Chonk run) at any tier. Product matches
+/// follow the triage order: tier 2 (KEV) -> exploited-vulnerability.
 pub fn playbook_for(tier: u8, is_package_match: bool) -> &'static str {
+    if tier == 1 {
+        return "malicious-dependency";
+    }
+    if is_package_match {
+        return "advisory-fleet-triage";
+    }
     match tier {
-        1 => "malicious-dependency",
         2 => "exploited-vulnerability",
-        _ if is_package_match => "advisory-fleet-triage",
         _ => "advisory-fleet-triage",
     }
 }
@@ -58,10 +64,17 @@ mod tests {
 
     #[test]
     fn playbooks() {
+        // tier-1 malware keeps malicious-dependency precedence, even for packages
         assert_eq!(playbook_for(1, true), "malicious-dependency");
-        assert_eq!(playbook_for(2, false), "exploited-vulnerability");
+        assert_eq!(playbook_for(1, false), "malicious-dependency");
+        // package/library match -> advisory-fleet-triage at ANY tier
+        assert_eq!(playbook_for(2, true), "advisory-fleet-triage");
         assert_eq!(playbook_for(3, true), "advisory-fleet-triage");
         assert_eq!(playbook_for(4, true), "advisory-fleet-triage");
+        // product matches follow the triage order
+        assert_eq!(playbook_for(2, false), "exploited-vulnerability");
+        assert_eq!(playbook_for(3, false), "advisory-fleet-triage");
+        assert_eq!(playbook_for(4, false), "advisory-fleet-triage");
     }
 
     #[test]

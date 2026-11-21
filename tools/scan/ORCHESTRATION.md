@@ -39,7 +39,8 @@ team's Le Chonk pipeline (see `system.md`):
 - All parsing (JSON, config, inventory, feed payloads) is hand-written and strict:
   hard caps on input bytes, nesting depth, string length, array/object sizes.
 - Network goes only through `curl` invoked as an **argv array** (never a shell),
-  stdin null, stdout/stderr read with byte caps, `--max-time`/`--connect-timeout`,
+  stdin null except for the OSV POST body (`--data-binary @-`, piped from the engine),
+  stdout/stderr read with byte caps, `--max-time`/`--connect-timeout`,
   `--max-filesize`, no redirect following, https only, and the host must exactly match
   a compiled-in allowlist taken from `feeds.md` (`www.cisa.gov`, `api.osv.dev`,
   `api.github.com`, `services.nvd.nist.gov`, `api.first.org`). Query parameters are
@@ -65,11 +66,16 @@ kb-scan version
 kb-scan self-test
 kb-scan feeds                                   # list feed endpoints + the host allowlist
 kb-scan sync   [--repo DIR] [--out FILE] [--pretty]                 # one git poll → sync report JSON on stdout
-kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty]   # one scan pass → report JSON on stdout
+kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max-filesize N]   # one scan pass → report JSON on stdout
 kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
+                  [--shard NAME] [--force] [--stop-file PATH] [--allow-unsandboxed]
                                                     # continuous: each cycle runs sync then scan,
                                                     # writes <out-dir>/reports/<ts>-sync.json and <ts>-scan.json
                                                     # plus atomically-updated latest-sync.json / latest.json
+kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--run-id ID]
+                  [--force] [--stop-file PATH] [--allow-unsandboxed]   # supervisor: spawns one watch --shard per shard
+kb-scan merge  [--out-dir DIR] [--out FILE]     # fold shards/*/latest.json into one kb-scan-report/1
+kb-scan serve  [--out-dir DIR] [--addr 127.0.0.1:8787] [--allow-non-localhost]   # localhost query API
 ```
 
 Exit codes: 0 ok · 2 usage/config error · 3 feed/git error (partial results still reported) · 4 lock held by another instance.
@@ -88,6 +94,7 @@ Config file (strict: unknown keys are an error; all keys optional, defaults appl
   "git_remote": "origin",
   "http_timeout_secs": 60,
   "max_body_bytes": 8388608,
+  "sandbox_cmd": ["bwrap", "--ro-bind", "{repo}", "{repo}", "--bind", "{out}", "{out}", "--dev", "/dev", "--proc", "/proc", "--chdir", "{repo}", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin"],
   "epss_threshold": 0.5,
   "kev_recent_days": 30,
   "feeds": { "kev": true, "osv": true, "github": true, "epss": true, "nvd": false }
@@ -104,19 +111,19 @@ Inventory file:
 }
 ```
 
-Scan report (`schema: "kb-scan-report/1"`): `generated_at`, `engine {name, version, static_musl}`,
+Scan report (`schema: "kb-scan-report/1"`): `generated_at`, `engine {name, version, static_musl, swarm?}`,
 `feeds: [{name, status, detail?, entries?}]`, `findings: [{tier, kind, id, package?,
-product?, cve?, summary, source, epss?, kev_date_added?, playbook}]`,
-`stats {packages, cves, findings, errors[]}`.
+product?, cve?, summary, source, status?, epss?, kev_date_added?, playbook}]`,
+`stats {packages, cves, findings, errors[]}`, and in swarm mode `shards: [{name, status, generated_at}]`.
 Tiers follow `feeds.md` "Order of triage": 1 malware (`MAL-` ids / GitHub `type=malware`)
 → playbook `malicious-dependency`; 2 CVE in KEV touching the inventory →
 `exploited-vulnerability`; 3 high/critical severity or EPSS ≥ threshold; 4 the rest.
 When the match is a library/package rather than a product, `playbook` is
-`advisory-fleet-triage` (the Le Chonk run).
+`advisory-fleet-triage` (the Le Chonk run) at any tier.
 
 Sync report (`schema: "kb-scan-sync/1"`): `generated_at`, `repo`, `remote`,
 `branches: [{name, ahead, behind, new_commits: [{sha, subject}], moved: bool}]`,
-`new_branches: [name]`, `attention: [string]` — human-readable warnings such as
+`new_branches: [name]`, `attention: [string]`, `errors: [string]` — human-readable warnings such as
 "origin/knowledge moved 855f5a9..a9c0880: rebase before relying on ingested pages"
 or "new branch origin/build/track-x appeared".
 
@@ -139,10 +146,14 @@ Never merge, rebase or push from the engine — it only reports.
 ## Python wrapper contract (`tools/scan.py`, stdlib only)
 
 ```
-python3 tools/scan.py scan   [--config FILE] [--inventory FILE] [--out report.json]
-python3 tools/scan.py sync   [--repo DIR] [--out sync.json]
+python3 tools/scan.py scan   [--config FILE] [--inventory FILE] [--out report.json] [--allow-unsandboxed]
+python3 tools/scan.py sync   [--repo DIR] [--out sync.json] [--allow-unsandboxed]
 python3 tools/scan.py loop   [--config FILE] [--interval SECS] [--max-runs N]   # streams the engine's watch mode
+python3 tools/scan.py swarm  [--config FILE] [--interval SECS] [--max-runs N] [--run-id ID]
 python3 tools/scan.py report --json REPORT [--out advisories/scan-latest.md] [--watch SECS]
+python3 tools/scan.py brief  --json REPORT [--sync-json SYNC] [--out FILE] [--speak]
+python3 tools/scan.py audio-loop --json REPORT [--sync-json SYNC] [--interval 60] [--once] [--listen]
+python3 tools/scan.py query  {health|latest|sync|findings|brief} [--port 8787] [--tier N] [--speak] [--token-env KB_SCAN_QUERY_TOKEN]
 python3 tools/scan.py selftest
 python3 tools/scan.py feeds
 ```
