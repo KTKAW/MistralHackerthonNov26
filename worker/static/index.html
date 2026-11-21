@@ -4,9 +4,71 @@
   <meta charset="utf-8">
   <title>le-chonk · sandbox audit console</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <h1>Sandbox Audit Console</h1>
-  <p>Placeholder — G1 skeleton. API: <a href="/api/health">/api/health</a></p>
+  <header>
+    <h1>le-chonk <span class="dim">· sandbox audit console</span></h1>
+    <nav id="tabs">
+      <button data-tab="runs" class="tab active">Runs</button>
+      <button data-tab="playground" class="tab">Playground</button>
+      <button data-tab="policy" class="tab">Policy</button>
+    </nav>
+    <span id="health" class="dim"></span>
+  </header>
+
+  <main>
+    <section id="tab-runs" class="tabpage active">
+      <div id="runs-view">
+        <div class="toolbar">
+          <h2>Runs</h2>
+          <button id="btn-new-run" title="start runs/<run_id>/<repo> via worker/run_repo.py">+ new run</button>
+          <span class="dim" id="runs-meta"></span>
+        </div>
+        <div id="cards" class="cards"></div>
+      </div>
+      <div id="detail-view" class="hidden">
+        <button id="btn-back">← all runs</button>
+        <div id="detail"></div>
+      </div>
+    </section>
+
+    <section id="tab-playground" class="tabpage">
+      <h2>Playground — fire commands through <code>douane</code></h2>
+      <p class="dim">Commands run with <code>SANDBOX_WORKDIR</code> pointed at a scratch dir under
+      <code>runs/ui-scratch/</code>, exactly like the worker's shell hook rewrites.</p>
+      <div class="probe-row">
+        <button class="probe" data-cmd="curl -s https://example.com">curl example.com</button>
+        <button class="probe" data-cmd="touch ../escape">touch ../escape</button>
+        <button class="probe" data-cmd="cat .env">cat .env</button>
+        <button class="probe" data-cmd="touch /tmp/ok">touch /tmp/ok</button>
+        <button class="probe" data-cmd="pip --version --no-index">offline pip</button>
+      </div>
+      <form id="play-form">
+        <input id="play-cmd" type="text" placeholder="any shell command…" autocomplete="off" spellcheck="false">
+        <button type="submit">run in sandbox</button>
+      </form>
+      <pre id="play-out" class="out"></pre>
+    </section>
+
+    <section id="tab-policy" class="tabpage">
+      <h2>Effective Seatbelt profile + <code>douane</code></h2>
+      <div class="toolbar"><button id="btn-refresh-policy">reload</button>
+      <span class="dim">placeholders substituted against the playground scratch dir</span></div>
+      <h3>profile.sb (rendered)</h3>
+      <pre id="policy-profile" class="out"></pre>
+      <h3>sandbox/douane</h3>
+      <pre id="policy-douane" class="out"></pre>
+    </section>
+  </main>
+
+  <div id="file-modal" class="hidden">
+    <div class="modal-box">
+      <div class="toolbar"><span id="file-title"></span><button id="btn-close-file">✕</button></div>
+      <pre id="file-content" class="out"></pre>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
 </body>
 </html>

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RUNS_ROOT = Path(os.environ.get("LE_CHONK_RUNS_ROOT", str(REPO_ROOT / "runs"))).resolve()
@@ -203,6 +204,7 @@ def create_app(runs_root=None) -> FastAPI:
     def index():
         return FileResponse(STATIC_DIR / "index.html")
 
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app
 
 
