@@ -1,0 +1,22 @@
+{
+  "status": "final",
+  "verdict": "needs_human",
+  "repo": "search-svc",
+  "advisory": {
+    "advisory_id": "CVE-2026-96760",
+    "package": "authlib",
+    "affected_version_range": "<1.9.0",
+    "fixed_version": "1.9.0",
+    "flawed_function": "authlib.jose.JsonWebSignature.verify"
+  },
+  "gate": [
+    {
+      "rule": "verdict_file_present",
+      "passed": false,
+      "detail": "agent crashed and left no verdict.json; orchestrator wrote this needs_human state itself"
+    }
+  ],
+  "final_at": "2026-11-21T10:09:31Z",
+  "usage": {},
+  "proof_output": {}
+}
