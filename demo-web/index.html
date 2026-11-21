@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChonkSweep — Autonomous CVE Response</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥖</text></svg>">
+<style>
+  :root {
+    --bg: #07090f;
+    --bg2: #0b0f18;
+    --card: #10151f;
+    --card2: #161d2b;
+    --border: #1e293b;
+    --border2: #2a3648;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --accent: #f59e0b;
+    --accent2: #fbbf24;
+    --red: #ef4444;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --cyan: #06b6d4;
+    --mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse at 15% 0%, rgba(245,158,11,0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 0%, rgba(59,130,246,0.05) 0%, transparent 50%),
+      linear-gradient(rgba(30,41,59,0.15) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(30,41,59,0.15) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 32px; border-bottom: 1px solid var(--border);
+    background: rgba(7,9,15,0.85); backdrop-filter: blur(16px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; letter-spacing: -0.5px; }
+  .logo-icon {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #dc2626);
+    display: flex; align-items: center; justify-content: center; font-size: 17px;
+    box-shadow: 0 0 20px rgba(245,158,11,0.3);
+  }
+  .logo em { color: var(--accent); font-style: normal; }
+  .header-right { display: flex; gap: 10px; align-items: center; }
+  .badge {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px; background: var(--bg2);
+  }
+  .badge .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1; box-shadow:0 0 6px var(--green)} 50%{opacity:0.4; box-shadow:none} }
+  .voice-btn {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 20px;
+    padding: 5px 14px; cursor: pointer; font-size: 13px; color: var(--muted); transition: all 0.2s;
+  }
+  .voice-btn:hover, .voice-btn.on { color: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 12px rgba(6,182,212,0.2); }
+
+  /* ── Views ── */
+  .view { display: none; max-width: 1200px; margin: 0 auto; padding: 32px 32px 60px; animation: fadeIn 0.4s ease; }
+  .view.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* ── Landing ── */
+  .hero { text-align: center; padding: 70px 0 30px; }
+  .hero .tag {
+    display: inline-block; font-family: var(--mono); font-size: 12px; color: var(--accent);
+    border: 1px solid rgba(245,158,11,0.3); background: rgba(245,158,11,0.06);
+    padding: 6px 16px; border-radius: 20px; margin-bottom: 24px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  .hero h1 { font-size: 52px; font-weight: 900; letter-spacing: -2px; line-height: 1.1; margin-bottom: 20px; }
+  .hero h1 .grad { background: linear-gradient(135deg, var(--accent) 0%, #dc2626 50%, var(--purple) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { color: var(--muted); font-size: 18px; max-width: 640px; margin: 0 auto 40px; line-height: 1.65; }
+  .input-card {
+    background: var(--card); border: 1px solid var(--border2); border-radius: 18px;
+    padding: 28px; max-width: 680px; margin: 0 auto; text-align: left;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(245,158,11,0.05);
+    position: relative; overflow: hidden;
+  }
+  .input-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+  .input-card label { font-family: var(--mono); font-size: 11px; color: var(--muted); display: block; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .input-card textarea {
+    width: 100%; height: 110px; background: var(--bg2); border: 1px solid var(--border2);
+    border-radius: 12px; color: var(--text); padding: 16px; font-family: var(--mono);
+    font-size: 13px; resize: none; outline: none; transition: border 0.2s, box-shadow 0.2s; line-height: 1.6;
+  }
+  .input-card textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(245,158,11,0.1); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+    background: linear-gradient(135deg, var(--accent), #dc2626); color: #fff;
+    border: none; border-radius: 12px; padding: 15px 36px; font-size: 15px;
+    font-weight: 700; transition: transform 0.15s, box-shadow 0.15s;
+    box-shadow: 0 4px 24px rgba(245,158,11,0.3);
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 36px rgba(245,158,11,0.5); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-row { text-align: center; margin-top: 24px; }
+  .sample-link { text-align: center; margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .sample-link a { color: var(--blue); cursor: pointer; text-decoration: none; }
+  .sample-link a:hover { text-decoration: underline; }
+  .stats-row { display: flex; gap: 14px; justify-content: center; margin-top: 56px; flex-wrap: wrap; }
+  .stat {
+    text-align: center; padding: 20px 32px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 14px; min-width: 140px;
+    transition: transform 0.2s, border 0.2s;
+  }
+  .stat:hover { transform: translateY(-4px); border-color: var(--border2); }
+  .stat .num { font-size: 32px; font-weight: 900; font-family: var(--mono); }
+  .stat .lbl { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .track-badges { display: flex; gap: 10px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+  .track-badge {
+    font-family: var(--mono); font-size: 11px; padding: 6px 14px; border-radius: 8px;
+    border: 1px solid var(--border2); background: var(--card); color: var(--muted);
+  }
+  .track-badge b { color: var(--accent); }
+
+  /* ── Workflow pipeline ── */
+  .pipeline {
+    display: flex; align-items: center; gap: 0; margin-bottom: 24px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px 20px; overflow-x: auto;
+  }
+  .pipe-step { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 8px; font-family: var(--mono); font-size: 12px; white-space: nowrap; transition: all 0.3s; }
+  .pipe-step .num {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--border2);
+    display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--muted); transition: all 0.3s;
+  }
+  .pipe-step.pending { color: var(--muted); }
+  .pipe-step.running { color: var(--blue); background: rgba(59,130,246,0.1); }
+  .pipe-step.running .num { background: var(--blue); color: #fff; border-color: var(--blue); animation: pulse 1s infinite; }
+  .pipe-step.done { color: var(--green); background: rgba(34,197,94,0.08); }
+  .pipe-step.done .num { background: var(--green); color: #fff; border-color: var(--green); }
+  .pipe-step.paused { color: var(--accent); background: rgba(245,158,11,0.1); }
+  .pipe-step.paused .num { background: var(--accent); color: #fff; border-color: var(--accent); animation: pulse 1s infinite; }
+  .pipe-arrow { color: var(--border2); padding: 0 4px; font-size: 14px; }
+
+  /* ── Grid ── */
+  .grid-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+  .grid-header h2 { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+  .cve-tag { font-family: var(--mono); font-size: 13px; color: var(--accent); background: rgba(245,158,11,0.08); padding: 5px 14px; border-radius: 8px; border: 1px solid rgba(245,158,11,0.25); display: inline-block; margin-top: 6px; }
+  .header-right-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .timer-chip { font-family: var(--mono); font-size: 14px; padding: 9px 18px; border-radius: 10px; background: var(--card); border: 1px solid var(--border2); display: flex; align-items: center; gap: 8px; }
+  .timer-chip .clock { color: var(--accent); }
+  .nav-tabs { display: flex; gap: 6px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+  .nav-tab { background: transparent; border: none; color: var(--muted); padding: 7px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.15s; }
+  .nav-tab:hover { color: var(--text); }
+  .nav-tab.active { background: var(--card2); color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+
+  .main-layout { display: grid; grid-template-columns: 1fr 300px; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .main-layout { grid-template-columns: 1fr; } }
+  .repo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .tile {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; min-height: 140px;
+  }
+  .tile:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: 0 8px 30px rgba(0,0,0,0.4); }
+  .tile .repo-name { font-family: var(--mono); font-size: 13px; font-weight: 700; margin-bottom: 10px; word-break: break-all; }
+  .tile .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .tile .sub { font-size: 11px; color: var(--muted); margin-top: 10px; font-family: var(--mono); line-height: 1.5; }
+  .st-scanning { background: rgba(59,130,246,0.12); color: var(--blue); border: 1px solid rgba(59,130,246,0.3); }
+  .st-affected { background: rgba(239,68,68,0.12); color: var(--red); border: 1px solid rgba(239,68,68,0.35); }
+  .st-fixed    { background: rgba(234,179,8,0.12); color: var(--yellow); border: 1px solid rgba(234,179,8,0.35); }
+  .st-safe     { background: rgba(34,197,94,0.12); color: var(--green); border: 1px solid rgba(34,197,94,0.35); }
+  .st-human    { background: rgba(168,85,247,0.12); color: var(--purple); border: 1px solid rgba(168,85,247,0.35); }
+  .spinner { width: 13px; height: 13px; border: 2px solid rgba(59,130,246,0.2); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tile.scanning { border-color: rgba(59,130,246,0.3); }
+  .tile.affected { border-left: 3px solid var(--red); }
+  .tile.fixed    { border-left: 3px solid var(--yellow); }
+  .tile.safe     { border-left: 3px solid var(--green); }
+  .tile.human    { border-left: 3px solid var(--purple); }
+  .progress-bar { height: 3px; background: var(--bg2); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+  .progress-bar > div { height: 100%; background: linear-gradient(90deg, var(--blue), var(--cyan)); border-radius: 2px; transition: width 0.5s ease; width: 0%; }
+  .tile .agent-dot { position: absolute; top: 14px; right: 14px; width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── Side panel: live log + cost ── */
+  .side-panel { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 80px; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .panel-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg2); display: flex; align-items: center; gap: 8px; }
+  .panel-title .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: pulse 1.5s infinite; }
+  .scan-log { padding: 12px 16px; font-family: var(--mono); font-size: 11px; max-height: 280px; overflow-y: auto; line-height: 1.8; }
+  .scan-log .line { color: var(--muted); animation: fadeIn 0.3s ease; white-space: pre-wrap; word-break: break-word; }
+  .scan-log .line .t { color: var(--accent); margin-right: 6px; }
+  .scan-log .line.ok { color: var(--green); }
+  .scan-log .line.warn { color: var(--yellow); }
+  .scan-log .line.err { color: var(--red); }
+  .scan-log .line.info { color: var(--blue); }
+  .cost-body { padding: 14px 16px; font-family: var(--mono); font-size: 12px; }
+  .cost-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .cost-row:last-child { border: none; }
+  .cost-row .k { color: var(--muted); }
+  .cost-row .v { color: var(--text); }
+  .cost-row .v.accent { color: var(--accent); }
+  .cost-bar { height: 6px; background: var(--bg2); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  .cost-bar > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); width: 0%; transition: width 0.5s; border-radius: 3px; }
+
+  /* ── Audit trail ── */
+  .audit-header { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; background: var(--card); border: 1px solid var(--border2); border-radius: 14px; padding: 18px 22px; margin-bottom: 20px; }
+  .audit-header .merkle { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .audit-header .merkle .val { color: var(--green); }
+  .audit-header .verified { font-family: var(--mono); font-size: 12px; color: var(--green); }
+  .audit-list { display: flex; flex-direction: column; gap: 8px; }
+  .audit-entry { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 13px 18px; font-family: var(--mono); font-size: 12px; animation: fadeIn 0.3s ease; flex-wrap: wrap; }
+  .audit-entry .ts { color: var(--muted); min-width: 60px; }
+  .audit-entry .agent { color: var(--blue); min-width: 130px; }
+  .audit-entry .action { color: var(--text); flex: 1; min-width: 200px; }
+  .audit-entry .hash { color: var(--muted); font-size: 11px; }
+  .audit-entry .badge-verify { color: var(--green); font-size: 14px; }
+  .audit-entry.blocked { border-left: 3px solid var(--red); }
+  .audit-entry.allowed { border-left: 3px solid var(--green); }
+
+  /* ── Modal ── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; align-items: center; justify-content: center; padding: 24px; backdrop-filter: blur(6px); }
+  .modal-overlay.open { display: flex; animation: fadeIn 0.2s ease; }
+  .modal { background: var(--card); border: 1px solid var(--border2); border-radius: 18px; max-width: 780px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 30px; box-shadow: 0 40px 100px rgba(0,0,0,0.7); }
+  .modal h3 { font-size: 19px; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+  .modal .close-btn { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 24px; cursor: pointer; }
+  .modal .close-btn:hover { color: var(--text); }
+  .modal .meta { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .modal .section { margin-top: 22px; }
+  .modal .section h4 { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 10px; }
+  .code-block { background: #0a0d14; border: 1px solid var(--border); border-radius: 10px; padding: 16px; font-family: var(--mono); font-size: 12px; line-height: 1.7; overflow-x: auto; white-space: pre; color: #c9d1d9; }
+  .code-block .cm { color: #6b7280; }
+  .code-block .kw { color: #ff7b72; }
+  .code-block .fn { color: #d2a8ff; }
+  .code-block .str { color: #a5d6ff; }
+  .code-block .del { background: rgba(239,68,68,0.12); display: block; text-decoration: line-through; color: #fca5a5; margin: 0 -16px; padding: 0 16px; }
+  .code-block .add { background: rgba(34,197,94,0.1); display: block; color: #86efac; margin: 0 -16px; padding: 0 16px; }
+  .verdict-box { padding: 14px 18px; border-radius: 10px; font-size: 14px; font-weight: 600; }
+  .verdict-box.red { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); }
+  .verdict-box.green { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); }
+  .verdict-box.yellow { background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.25); }
+  .test-result { font-family: var(--mono); font-size: 13px; padding: 12px 16px; border-radius: 10px; margin-top: 8px; }
+  .test-result.fail { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+  .test-result.pass { background: rgba(34,197,94,0.1); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+
+  /* ── Exploit replay ── */
+  .exploit-box { background: #0a0d14; border: 1px solid var(--border); border-radius: 10px; padding: 16px; font-family: var(--mono); font-size: 12px; }
+  .exploit-line { padding: 4px 0; animation: fadeIn 0.4s ease; }
+  .exploit-line .dir { color: var(--muted); }
+  .exploit-line.req { color: var(--red); }
+  .exploit-line.resp-200 { color: var(--red); font-weight: 700; }
+  .exploit-line.resp-401 { color: var(--green); font-weight: 700; }
+  .replay-btn { background: var(--bg2); border: 1px solid var(--border2); color: var(--text); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: 12px; font-weight: 600; margin-top: 10px; }
+  .replay-btn:hover { border-color: var(--accent); }
+
+  /* ── Report ── */
+  .report-card { background: var(--card); border: 1px solid var(--border2); border-radius: 18px; padding: 36px; max-width: 760px; margin: 0 auto; box-shadow: 0 30px 80px rgba(0,0,0,0.5); }
+  .report-card h2 { font-size: 22px; margin: 0; }
+  .report-card .subtitle { color: var(--muted); font-size: 13px; margin-top: 6px; font-family: var(--mono); }
+  .report-section { margin-bottom: 26px; }
+  .report-section h4 { font-size: 11px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 12px; }
+  .report-section table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .report-section td, .report-section th { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  .report-section th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .timer-big { text-align: center; padding: 28px; background: var(--bg2); border-radius: 14px; border: 1px solid var(--border); margin-bottom: 26px; }
+  .timer-big .time { font-family: var(--mono); font-size: 46px; font-weight: 900; color: var(--accent); text-shadow: 0 0 30px rgba(245,158,11,0.3); }
+  .timer-big .label { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .approve-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn-secondary { background: var(--card2); color: var(--text); border: 1px solid var(--border2); box-shadow: none; }
+  .btn-secondary:hover { border-color: var(--accent); box-shadow: none; transform: translateY(-2px); }
+  .btn-green { background: linear-gradient(135deg, #16a34a, #22c55e); box-shadow: 0 4px 24px rgba(34,197,94,0.3); }
+  .btn-cyan { background: linear-gradient(135deg, #0891b2, var(--cyan)); box-shadow: 0 4px 24px rgba(6,182,212,0.3); }
+  .success-msg { display: none; text-align: center; padding: 60px 20px; }
+  .success-msg.show { display: block; animation: fadeIn 0.5s ease; }
+  .success-msg .check { font-size: 64px; margin-bottom: 20px; animation: popIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275); }
+  @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
+  .success-msg h2 { font-size: 28px; margin-bottom: 10px; font-weight: 900; }
+  .success-msg p { color: var(--muted); line-height: 1.7; }
+  #confetti-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 999; }
+
+  footer { text-align: center; padding: 28px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); margin-top: 40px; }
+  footer .mono { font-family: var(--mono); }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 34px; }
+    .view { padding: 20px 14px 40px; }
+    header { padding: 12px 16px; }
+    .hero { padding: 40px 0 20px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="confetti-canvas"></canvas>
+
+<header>
+  <div class="logo"><div class="logo-icon">🥖</div><span>Chonk<em>Sweep</em></span></div>
+  <div class="header-right">
+    <button class="voice-btn" id="voice-btn" onclick="toggleVoice()">🔊 Voxtral voice: OFF</button>
+    <div class="badge"><span class="dot"></span>Le Chonk in London · Nov 21 2026</div>
+  </div>
+</header>
+
+<!-- ══════════ VIEW 1: LANDING ══════════ -->
+<div class="view active" id="view-input">
+  <div class="hero">
+    <div class="tag">⚡ Autonomous CVE response · 24h regulatory deadline</div>
+    <h1>From advisory to<br><span class="grad">proven verdict</span> in minutes</h1>
+    <p>Paste a CVE. A fleet of Le Chonk agents sweeps every repository in parallel — each one traces reachability, proves it with a runnable exploit test, patches, and signs the verdict. You approve the ENISA report.</p>
+
+    <div class="input-card">
+      <label>Security Advisory / CVE / GitHub Advisory</label>
+      <textarea id="advisory-input" spellcheck="false">CVE-2026-96760 — Authlib < 1.9.0: JsonWebSignature.deserialize_json accepts a JWS with an empty signatures array, so a forged token passes verification. Any service decoding attacker-supplied JSON JWS with default options is affected. CVSS 9.8 CRITICAL.</textarea>
+      <div class="btn-row">
+        <button class="btn" id="start-btn" onclick="startScan()">▶ &nbsp;Deploy agent fleet</button>
+      </div>
+      <div class="sample-link"><a onclick="loadSample()">↺ Load sample</a> &nbsp;·&nbsp; <a onclick="resetDemo()">Reset</a> &nbsp;·&nbsp; <span style="color:var(--muted)">or press <b style="font-family:var(--mono)">Enter</b></span> &nbsp;·&nbsp; <span style="color:var(--muted)" id="mode-badge">mode: <b id="mode-label" style="color:var(--accent)">demo (mock)</b></span></div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat"><div class="num" style="color:var(--accent)">8</div><div class="lbl">repos in parallel</div></div>
+      <div class="stat"><div class="num" style="color:var(--red)">4</div><div class="lbl">affected &amp; fixed</div></div>
+      <div class="stat"><div class="num" style="color:var(--green)">4</div><div class="lbl">proven not affected</div></div>
+      <div class="stat"><div class="num" style="color:var(--blue)">~3 min</div><div class="lbl">wall time</div></div>
+      <div class="stat"><div class="num" style="color:var(--purple)">$0.44</div><div class="lbl">total LLM cost</div></div>
+    </div>
+
+    <div class="track-badges">
+      <span class="track-badge">Track_01 <b>Anything goes</b></span>
+      <span class="track-badge">Bonus_02 <b>Agents + Workflows</b> +£500</span>
+      <span class="track-badge">Special_03 <b>Voxtral</b> +£250</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ VIEW 2: GRID ══════════ -->
+<div class="view" id="view-grid">
+  <div class="grid-header">
+    <div>
+      <h2>Fleet scan</h2>
+      <span class="cve-tag" id="cve-tag">CVE-2026-96760 · authlib &lt;1.9.0</span>
+    </div>
+    <div class="header-right-group">
+      <div class="timer-chip"><span class="clock">⏱</span> <span id="elapsed">00:00</span></div>
+      <div class="nav-tabs">
+        <button class="nav-tab active" onclick="goGrid()">Grid</button>
+        <button class="nav-tab" onclick="showAudit()">🔏 Audit</button>
+        <button class="nav-tab" onclick="goReport()">📋 Report</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workflow pipeline -->
+  <div class="pipeline" id="pipeline">
+    <div class="pipe-step pending" id="ps-0"><span class="num">1</span>Intake</div><span class="pipe-arrow">→</span>
+    <div class="pipe-step pending" id="ps-1"><span class="num">2</span>Parse advisory</div><span class="pipe-arrow">→</span>
+    <div class="pipe-step pending" id="ps-2"><span class="num">3</span>Fan-out ×8</div><span class="pipe-arrow">→</span>
+    <div class="pipe-step pending" id="ps-3"><span class="num">4</span>Trace + prove</div><span class="pipe-arrow">→</span>
+    <div class="pipe-step pending" id="ps-4"><span class="num">5</span>Gate verify</div><span class="pipe-arrow">→</span>
+    <div class="pipe-step pending" id="ps-5"><span class="num">6</span>Report + approve</div>
+  </div>
+
+  <div class="main-layout">
+    <div class="repo-grid" id="repo-grid"></div>
+    <div class="side-panel">
+      <div class="panel">
+        <div class="panel-title"><span class="live-dot"></span> Agent log</div>
+        <div class="scan-log" id="scan-log"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">💰 Cost &amp; tokens</div>
+        <div class="cost-body">
+          <div class="cost-row"><span class="k">Agents running</span><span class="v accent" id="cost-agents">0 / 8</span></div>
+          <div class="cost-row"><span class="k">Input tokens</span><span class="v" id="cost-in">0</span></div>
+          <div class="cost-row"><span class="k">Output tokens</span><span class="v" id="cost-out">0</span></div>
+          <div class="cost-row"><span class="k">Total cost</span><span class="v accent" id="cost-total">$0.00</span></div>
+          <div class="cost-bar"><div id="cost-bar-fill"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ VIEW: AUDIT ══════════ -->
+<div class="view" id="view-audit">
+  <div class="grid-header">
+    <div><h2>🔏 Signed Audit Trail</h2><span class="cve-tag">Tamper-proof · offline-verifiable</span></div>
+    <div class="nav-tabs">
+      <button class="nav-tab" onclick="goGrid()">Grid</button>
+      <button class="nav-tab active">🔏 Audit</button>
+      <button class="nav-tab" onclick="goReport()">📋 Report</button>
+    </div>
+  </div>
+  <div class="audit-header">
+    <div class="merkle">Merkle root: <span class="val">sha256:7b3d9f2a…e2f1c4</span></div>
+    <div class="verified" id="audit-verified">✓ every record verified offline against the published key</div>
+    <div style="margin-left:auto"><button class="btn btn-secondary" style="padding:8px 16px;font-size:12px" onclick="verifyAudit(this)">🔍 Verify offline</button></div>
+  </div>
+  <div class="audit-list" id="audit-list"></div>
+</div>
+
+<!-- ══════════ VIEW 3: REPORT ══════════ -->
+<div class="view" id="view-report">
+  <div id="report-content">
+    <div class="report-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px">
+        <h2>📋 Early Warning Report — Draft</h2>
+        <div class="nav-tabs">
+          <button class="nav-tab" onclick="goGrid()">Grid</button>
+          <button class="nav-tab" onclick="showAudit()">🔏 Audit</button>
+          <button class="nav-tab active">📋 Report</button>
+        </div>
+      </div>
+      <div class="subtitle">EU Cyber Resilience Act · Art. 14 · ENISA Single Reporting Platform</div>
+
+      <div class="timer-big" style="margin-top:24px">
+        <div class="time" id="report-timer">23:41:07</div>
+        <div class="label">remaining of the 24-hour reporting window</div>
+      </div>
+
+      <div class="report-section">
+        <h4>🔴 Affected products (patched &amp; verified)</h4>
+        <table>
+          <tr><th>Product</th><th>Route</th><th>Evidence</th></tr>
+          <tr><td>svc-01 gateway</td><td>direct · deserialize_json · POST /introspect</td><td>proof test fails v1.8.0 / passes v1.9.0</td></tr>
+          <tr><td>svc-02 billing</td><td><b style="color:var(--accent)">hidden</b> · verify_bearer() wrapper → jws.deserialize</td><td>proof test fails v1.8.0 / passes v1.9.0</td></tr>
+          <tr><td>svc-03 webhooks</td><td>direct · jws.deserialize(dict) · POST /hooks/payment</td><td>proof test fails v1.8.0 / passes v1.9.0</td></tr>
+          <tr><td>svc-08 profiles</td><td>JSON bearer → jws.deserialize(json.loads()) · GET /profile</td><td>proof test fails v1.8.0 / passes v1.9.0</td></tr>
+        </table>
+      </div>
+
+      <div class="report-section">
+        <h4>🟢 Proven not affected (4) — "no reachable path found"</h4>
+        <table>
+          <tr><th>Product</th><th>Reason</th></tr>
+          <tr><td>svc-04 sessions</td><td>jwt.decode compact-only — JSON input → DecodeError before signature check</td></tr>
+          <tr><td>svc-05 legacy</td><td>explicit deserialize_compact — JSON input fails segment check</td></tr>
+          <tr><td>svc-06 oauth-client</td><td>outbound OAuth2 URL building only — no inbound verification</td></tr>
+          <tr><td>svc-07 signer</td><td>sign-only (serialize_compact) — never deserializes inbound input</td></tr>
+        </table>
+      </div>
+
+      <div class="report-section">
+        <h4>🟣 Needs human review</h4>
+        <p style="font-size:14px">None — all 8 verdicts passed the independent no-model gate.</p>
+      </div>
+
+      <div class="report-section">
+        <h4>Summary</h4>
+        <p style="font-size:14px; line-height:1.75">
+          8 repositories scanned in parallel by 8 Le Chonk agents orchestrated as one Mistral Workflow.
+          4 affected by CVE-2026-96760 (Authlib empty-signatures JWS bypass — one via a hidden wrapper route
+          a text search would miss), all upgraded to authlib 1.9.0 and verified by proof tests re-run on clean
+          vulnerable and fixed baselines by a no-model gate. 4 proven not affected ("no reachable path found",
+          never "safe"). Every agent action cryptographically signed and offline-verifiable.
+        </p>
+      </div>
+
+      <div class="approve-row">
+        <button class="btn btn-secondary" onclick="goGrid()">← Grid</button>
+        <button class="btn btn-cyan" onclick="voiceAlert()">🔊 Read aloud (Voxtral)</button>
+        <button class="btn btn-green" onclick="approveReport()">✓ Approve report (human submits to ENISA)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="success-msg" id="success-msg">
+    <div class="check">✅</div>
+    <h2>Report approved ✓</h2>
+    <p>Approved within the 24-hour window — a human submits it via ENISA's Single Reporting Platform.<br>Every agent action signed · all verdicts backed by runnable proof tests · audit trail offline-verifiable.</p>
+    <br>
+    <button class="btn" onclick="resetDemo()">↺ Run again</button>
+  </div>
+</div>
+
+<!-- ══════════ MODAL ══════════ -->
+<div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<footer>
+  <span class="mono">ChonkSweep</span> · Mistral Large 4 (Le Chonk) × Vibe agents × Mistral Workflows × signed audit trail · <span class="mono">🥖 Le Chonk in London · 21 Nov 2026</span>
+</footer>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════
+//  CONFIG — live backend vs mock demo
+//  Set API_BASE to the team's FastAPI (web/app.py on :8000).
+//  If unreachable, falls back to the built-in simulation so the
+//  Vercel demo always works standalone.
+// ═══════════════════════════════════════════
+const API_BASE = (new URLSearchParams(location.search)).get('api') || 'http://localhost:8000';
+let liveRunId = null;   // non-null => live mode
+let pollTimer = null;
+
+// ═══════════════════════════════════════════
+//  DATA — 12 repos (mock fallback)
+// ═══════════════════════════════════════════
+const REPOS = [
+  { name:'svc-01 gateway', status:'fixed', time:'2m 34s', cost:0.06, tokens:'58.1k', ep:'POST /introspect',
+    detail:{ verdict:'AFFECTED → FIXED', vc:'yellow',
+      summary:'Direct call to JsonWebSignature.deserialize_json() in the /introspect handler. A forged JWS with an empty signatures[] array is accepted on authlib 1.8.0. Upgraded to 1.9.0 — proof test now passes.',
+      route:'POST /introspect → app.py → authlib/jose/jws.py::deserialize_json (flawed branch)',
+      diffBefore:'# requirements.txt\nauthlib==1.8.0   <span class="cm"># vulnerable</span>',
+      diffAfter:'<span class="del">-authlib==1.8.0</span>\n<span class="add">+authlib==1.9.0</span>   <span class="cm"># fixed</span>',
+      tb:'❌ FAIL on 1.8.0 — forged JWS (empty signatures[]) accepted → HTTP 200',
+      ta:'✅ PASS on 1.9.0 — BadSignatureError → HTTP 401 · suite 3/3 still green' } },
+  { name:'svc-02 billing', status:'fixed', time:'2m 58s', cost:0.05, tokens:'61.7k', ep:'POST /charge',
+    detail:{ verdict:'AFFECTED → FIXED · HIDDEN ROUTE', vc:'yellow',
+      summary:'The flawed function is reached through a wrapper a text search would miss: POST /charge → security.verify_bearer() → jws.deserialize(). Grep for the flawed function name finds nothing in the service code — found by reading the installed library source. Upgraded to 1.9.0.',
+      route:'HIDDEN: POST /charge → security.py::verify_bearer() → authlib jws.deserialize()',
+      diffBefore:'# src/svc_02/security.py — looks innocent\n<span class="kw">def</span> <span class="fn">verify_bearer</span>(token):\n    <span class="kw">return</span> jws.deserialize(token, key)  <span class="cm"># → flawed branch</span>',
+      diffAfter:'# requirements.txt\n<span class="del">-authlib==1.8.0</span>\n<span class="add">+authlib==1.9.0</span>',
+      tb:'❌ FAIL on 1.8.0 — forged Bearer JWS accepted via /charge → HTTP 200',
+      ta:'✅ PASS on 1.9.0 — rejected 401 · suite 3/3 still green' } },
+  { name:'svc-03 webhooks', status:'fixed', time:'2m 47s', cost:0.05, tokens:'55.9k', ep:'POST /hooks/payment',
+    detail:{ verdict:'AFFECTED → FIXED', vc:'yellow',
+      summary:'POST /hooks/payment decodes the JSON request body with jws.deserialize(dict) — the flawed JSON branch. Forged token with empty signatures[] accepted on 1.8.0. Upgraded to 1.9.0.',
+      route:'POST /hooks/payment → app.py → jws.deserialize(json_body) (flawed branch)',
+      diffBefore:'# requirements.txt\nauthlib==1.8.0   <span class="cm"># vulnerable</span>',
+      diffAfter:'<span class="del">-authlib==1.8.0</span>\n<span class="add">+authlib==1.9.0</span>',
+      tb:'❌ FAIL on 1.8.0 — forged JSON JWS accepted → HTTP 200',
+      ta:'✅ PASS on 1.9.0 — rejected 401 · suite 3/3 still green' } },
+  { name:'svc-08 profiles', status:'fixed', time:'3m 05s', cost:0.06, tokens:'72.1k', ep:'GET /profile',
+    detail:{ verdict:'AFFECTED → FIXED', vc:'yellow',
+      summary:'Bearer token is parsed with json.loads() and passed to jws.deserialize() — the JSON branch of the flaw, reachable on every request. Upgraded to 1.9.0.',
+      route:'GET /profile → app.py → jws.deserialize(json.loads(bearer))',
+      diffBefore:'# requirements.txt\nauthlib==1.8.0   <span class="cm"># vulnerable</span>',
+      diffAfter:'<span class="del">-authlib==1.8.0</span>\n<span class="add">+authlib==1.9.0</span>',
+      tb:'❌ FAIL on 1.8.0 — forged JSON bearer accepted → HTTP 200',
+      ta:'✅ PASS on 1.9.0 — rejected 401 · suite 3/3 still green' } },
+  { name:'svc-04 sessions', status:'safe', time:'2m 39s', cost:0.04, tokens:'49.2k', ep:'GET /me',
+    detail:{ verdict:'NOT AFFECTED — no reachable path found', vc:'green',
+      summary:'jwt.decode() is called compact-only; a JSON-serialized JWS input raises DecodeError before any signature check. Cited lines exist; reasoning not machine-checked.',
+      route:'GET /me → jwt.decode(compact) → JSON input → DecodeError (pre-signature)',
+      diffBefore:'# auth check — compact JWT only\njwt.decode(token, key)',
+      diffAfter:'<span class="cm"># no change needed</span>',
+      tb:'— rejected 401 on both 1.8.0 and 1.9.0 (no trigger)',
+      ta:'✅ suite 3/3 passes on both versions' } },
+  { name:'svc-05 legacy', status:'safe', time:'1m 58s', cost:0.03, tokens:'40.3k', ep:'POST /verify',
+    detail:{ verdict:'NOT AFFECTED — no reachable path found', vc:'green',
+      summary:'Uses explicit deserialize_compact(); a JSON JWS fails the segment check before signature verification. Cited lines exist; reasoning not machine-checked.',
+      route:'POST /verify → deserialize_compact → JSON input fails segment check',
+      diffBefore:'# legacy verifier — compact only\njws.deserialize_compact(token, key)',
+      diffAfter:'<span class="cm"># no change needed</span>',
+      tb:'— rejected on both versions (no trigger)',
+      ta:'✅ suite 3/3 passes on both versions' } },
+  { name:'svc-06 oauth-client', status:'safe', time:'0m 51s', cost:0.02, tokens:'28.7k', ep:'GET /login',
+    detail:{ verdict:'NOT AFFECTED — no reachable path found', vc:'green',
+      summary:'Outbound OAuth2 URL building only; there is no inbound JWS verification anywhere in the service. Cited lines exist; reasoning not machine-checked.',
+      route:'GET /login → outbound authorize URL — no inbound verify endpoint',
+      diffBefore:'# oauth client — outbound only\nauthorize_url = ...',
+      diffAfter:'<span class="cm"># no change needed</span>',
+      tb:'— no verification endpoint (no trigger)',
+      ta:'✅ suite 2/2 passes on both versions' } },
+  { name:'svc-07 signer', status:'safe', time:'0m 38s', cost:0.02, tokens:'22.4k', ep:'POST /sign',
+    detail:{ verdict:'NOT AFFECTED — no reachable path found', vc:'green',
+      summary:'Sign-only: serialize_compact() to issue tokens, never deserializes inbound input. Cited lines exist; reasoning not machine-checked.',
+      route:'POST /sign → serialize_compact (outbound only)',
+      diffBefore:'# signer — outbound only\njws.serialize_compact(payload, key)',
+      diffAfter:'<span class="cm"># no change needed</span>',
+      tb:'— no verification endpoint (no trigger)',
+      ta:'✅ suite 2/2 passes on both versions' } },
+];
+
+const SCAN_LOGS = [
+  ['info','▸ Advisory parsed → authlib <1.9.0 · empty-signatures JWS accepted · CVSS 9.8'],
+  ['info','▸ Mistral Workflow started · 8 repo activities fanned out in parallel'],
+  ['ok',  'svc-07 signer        38s │ sign-only — no reachable path'],
+  ['ok',  'svc-06 oauth-client  51s │ outbound OAuth2 only — no inbound verify'],
+  ['ok',  'svc-05 legacy        74s │ deserialize_compact — JSON input fails segment check'],
+  ['warn','svc-01 gateway     → AFFECTED · direct: deserialize_json · POST /introspect'],
+  ['warn','svc-02 billing     → AFFECTED · HIDDEN: verify_bearer() → jws.deserialize'],
+  ['warn','svc-03 webhooks    → AFFECTED · jws.deserialize(dict) · POST /hooks/payment'],
+  ['warn','svc-08 profiles    → AFFECTED · JSON bearer → jws.deserialize(json.loads())'],
+  ['ok',  'svc-04 sessions    159s │ jwt.decode compact-only — no reachable path'],
+  ['ok',  'svc-01 → proof FAIL on 1.8.0 ✓ · upgraded → PASS on 1.9.0 ✓'],
+  ['ok',  'svc-02 → proof FAIL on 1.8.0 ✓ · upgraded → PASS on 1.9.0 ✓ (hidden route proven)'],
+  ['ok',  'svc-03 → proof FAIL on 1.8.0 ✓ · upgraded → PASS on 1.9.0 ✓'],
+  ['ok',  'svc-08 → proof FAIL on 1.8.0 ✓ · upgraded → PASS on 1.9.0 ✓'],
+  ['info','▸ Gate (no model): re-running 4 proofs on clean 1.8.0 + 1.9.0 baselines…'],
+  ['ok',  '▸ Gate: 4/4 proofs fail on vulnerable & pass on fixed ✓ · 0 test files modified ✓'],
+  ['info','▸ Drafting ENISA early-warning report from gate-passed verdicts…'],
+  ['ok',  '✅ Done in 3m 12s · 8/8 verdicts final · $0.44 total'],
+];
+
+const AUDIT_RECORDS = [
+  ['09:00:01','orchestrator','advisory_parsed','CVE-2026-96760 → authlib <1.9.0','allowed','a1f3c9…8e21'],
+  ['09:00:02','orchestrator','workflow_started','8 repo activities in parallel','allowed','b2e4d1…9f30'],
+  ['09:00:38','svc-07','call_graph_analysed','sign-only, serialize_compact','allowed','c3a5e2…1a47'],
+  ['09:00:39','svc-07','verdict_signed','not_affected — no reachable path','allowed','d4b6f3…2b58'],
+  ['09:00:51','svc-06','call_graph_analysed','outbound OAuth2 only','allowed','e5c7a4…3c69'],
+  ['09:00:52','svc-06','verdict_signed','not_affected — no inbound verify','allowed','f6d8b5…4d7a'],
+  ['09:01:14','svc-05','route_traced','deserialize_compact — JSON fails segment check','allowed','a7e9c6…5e8b'],
+  ['09:01:15','svc-05','verdict_signed','not_affected — no reachable path','allowed','b8f1d7…6f9c'],
+  ['09:01:41','svc-01','route_traced','POST /introspect → deserialize_json','allowed','c9a2e8…70ad'],
+  ['09:02:10','svc-01','proof_test_written','forged JWS (empty signatures[]) → 200','allowed','d1b3f9…81be'],
+  ['09:02:34','svc-01','fix_applied','authlib 1.8.0 → 1.9.0','allowed','e2c4a1…92cf'],
+  ['09:02:41','svc-01','verdict_signed','affected_fixed','allowed','f3d5b2…a3e0'],
+  ['09:01:58','svc-02','route_traced','HIDDEN: verify_bearer() → jws.deserialize','allowed','a4e6c3…b4f1'],
+  ['09:02:25','svc-02','proof_test_written','forged bearer via /charge → 200','allowed','b5f7d4…c5a2'],
+  ['09:02:58','svc-02','fix_applied','authlib 1.8.0 → 1.9.0','allowed','c6a8e5…d6b3'],
+  ['09:03:18','svc-02','verdict_signed','affected_fixed (hidden route)','allowed','d7b9f6…e7c4'],
+  ['09:02:05','svc-03','route_traced','POST /hooks/payment → deserialize(dict)','allowed','e8c1a7…f8d5'],
+  ['09:02:36','svc-03','proof_test_written','forged JSON JWS → 200','allowed','f9d2b8…a9e6'],
+  ['09:02:47','svc-03','fix_applied','authlib 1.8.0 → 1.9.0','allowed','a1e3c9…b0f7'],
+  ['09:03:02','svc-03','verdict_signed','affected_fixed','allowed','b2f4d1…c1a8'],
+  ['09:02:12','svc-08','route_traced','GET /profile → deserialize(json.loads())','allowed','c3a5e2…d2b9'],
+  ['09:02:44','svc-08','proof_test_written','forged JSON bearer → 200','allowed','d4b6f3…e3c1'],
+  ['09:03:05','svc-08','fix_applied','authlib 1.8.0 → 1.9.0','allowed','e5c7a4…f4d2'],
+  ['09:03:20','svc-08','verdict_signed','affected_fixed','allowed','f6d8b5…a5e3'],
+  ['09:03:39','svc-04','call_graph_analysed','jwt.decode compact-only — DecodeError pre-signature','allowed','a7e9c6…b6f4'],
+  ['09:03:40','svc-04','verdict_signed','not_affected — no reachable path','allowed','b8f1d7…c7a5'],
+  ['09:03:41','gate','proofs_reverified','4 fail on 1.8.0, pass on 1.9.0 ✓','allowed','c9a2e8…d8b6'],
+  ['09:03:42','gate','integrity_check','0 tests modified · library matches wheelhouse ✓','allowed','d1b3f9…e9c7'],
+  ['09:03:43','orchestrator','report_drafted','ENISA early warning — awaiting approval','allowed','e2c4a1…f0d8'],
+];
+
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+let scanTimer=null, elapsedSec=0, reportTimer=null, voiceOn=false, scanDone=false;
+const $=id=>document.getElementById(id);
+
+function showView(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $(id).classList.add('active'); window.scrollTo({top:0,behavior:'smooth'});
+  if(id==='view-report') startReportTimer();
+}
+function goGrid(){ showView('view-grid'); }
+function goReport(){ showView('view-report'); }
+
+// ═══════════════════════════════════════════
+//  SCAN — live API first, mock fallback
+// ═══════════════════════════════════════════
+async function startScan(){
+  const advisory = $('advisory-input').value;
+  showView('view-grid'); scanDone=false;
+  buildGrid(); runPipeline();
+  // try live backend
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(()=>ctrl.abort(), 2500);
+    const r = await fetch(API_BASE + '/runs', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({advisory_text: advisory}),
+      signal: ctrl.signal
+    });
+    clearTimeout(to);
+    if(r.ok){
+      const j = await r.json();
+      liveRunId = j.run_id;
+      $('mode-label').textContent = '🔴 LIVE — backend ' + API_BASE;
+      $('mode-label').style.color = 'var(--green)';
+      startLivePoll();
+      speak('Live run started on the backend. Polling for gate-passed verdicts.');
+      return;
+    }
+  } catch(e) { /* fall through to mock */ }
+  liveRunId = null;
+  $('mode-label').textContent = 'demo (mock)';
+  runSimulation();
+  speak('Demo mode. Eight agents deployed across eight repositories.');
+}
+
+// ── Live mode: poll GET /runs/{id} every 2s ──
+function startLivePoll(){
+  clearInterval(pollTimer);
+  const poll = async () => {
+    try {
+      const r = await fetch(API_BASE + '/runs/' + liveRunId);
+      if(!r.ok) throw new Error('bad status');
+      const j = await r.json();
+      renderLiveRun(j);
+    } catch(e) {
+      // backend gone mid-demo → fall back to mock
+      if(liveRunId){ liveRunId=null; runSimulation(); }
+    }
+  };
+  poll();
+  pollTimer = setInterval(poll, 2000);
+}
+
+// verdict enum → tile status
+const VERDICT_MAP = {
+  'not_affected': 'safe',
+  'affected_proven': 'affected',
+  'affected_fixed': 'fixed',
+  'needs_human': 'human'
+};
+
+function renderLiveRun(j){
+  // ensure tiles exist for all repos mentioned
+  const g = $('repo-grid');
+  const existing = new Set([...g.children].map(c => c.dataset.repo));
+  j.tiles.forEach(t => {
+    if(!existing.has(t.repo)){
+      const idx = g.children.length;
+      const el = document.createElement('div');
+      el.className = 'tile scanning'; el.dataset.repo = t.repo;
+      el.innerHTML = `<span class="agent-dot" style="background:var(--blue);animation:pulse 1s infinite"></span>
+        <div class="repo-name">📦 ${t.repo}</div>
+        <span class="status-badge st-scanning"><span class="spinner"></span> SCANNING</span>
+        <div class="sub">waiting for gate…</div>`;
+      el.onclick = () => openLiveDetail(t.repo);
+      g.appendChild(el);
+    }
+  });
+  // update tiles from API
+  j.tiles.forEach(t => {
+    const st = VERDICT_MAP[t.verdict] || 'scanning';
+    setLiveTile(t.repo, st, t);
+  });
+  // log status
+  const logEl = $('scan-log');
+  const lastLine = logEl.lastElementChild;
+  const statusLine = `run ${j.run_id} · status: ${j.status} · ${j.tiles.length} gate-passed tiles`;
+  if(!lastLine || !lastLine.textContent.includes(statusLine)){
+    const l = document.createElement('div');
+    l.className = 'line info';
+    l.innerHTML = `<span class="t">[live]</span>${statusLine}`;
+    logEl.appendChild(l); logEl.scrollTop = logEl.scrollHeight;
+  }
+  if(j.status === 'APPROVED' || j.status === 'DONE'){
+    clearInterval(pollTimer);
+    setPipe(5,'done'); scanDone = true;
+  }
+  // cost ticker still runs on elapsed timer
+}
+
+function setLiveTile(repo, status, tile){
+  const tiles = [...$('repo-grid').children];
+  const el = tiles.find(c => c.dataset.repo === repo);
+  if(!el) return;
+  el.className = 'tile ' + status;
+  const dots={scanning:'var(--blue)',affected:'var(--red)',fixed:'var(--yellow)',safe:'var(--green)',human:'var(--purple)'};
+  const badges={
+    scanning:'<span class="status-badge st-scanning"><span class="spinner"></span> SCANNING</span>',
+    affected:'<span class="status-badge st-affected">🔴 AFFECTED</span>',
+    fixed:'<span class="status-badge st-fixed">🟡 FIXED</span>',
+    safe:'<span class="status-badge st-safe">🟢 NOT AFFECTED</span>',
+    human:'<span class="status-badge st-human">🟣 HUMAN</span>'};
+  const usage = tile.usage ? ` · ${tile.usage.input_tokens||0}→${tile.usage.output_tokens||0} tok · $${(tile.usage.cost||0).toFixed(3)}` : '';
+  el.innerHTML = `<span class="agent-dot" style="background:${dots[status]}"></span>
+    <div class="repo-name">📦 ${repo}</div>${badges[status]}
+    <div class="sub">${(tile.reason||'').substring(0,80)}${usage}</div>`;
+  el.onclick = () => openLiveDetail(repo);
+}
+
+// ── Live detail: fetch full verdict.json from artifacts ──
+async function openLiveDetail(repo){
+  const icons = {safe:'🟢',affected:'🔴',fixed:'🟡',human:'🟣'};
+  let v = null;
+  if(liveRunId){
+    try {
+      const r = await fetch(`${API_BASE}/artifacts/${liveRunId}/${repo}/verdict.json`);
+      if(r.ok) v = await r.json();
+    } catch(e){}
+  }
+  const st = v ? (VERDICT_MAP[v.verdict]||'scanning') : 'scanning';
+  if(!v){ openDetail(REPOS.findIndex(r=>r.name===repo) >= 0 ? REPOS.findIndex(r=>r.name===repo) : 0); return; }
+  const pathHtml = (v.path||[]).map(p=>`  ${p.file}:${p.line} — ${p.note||''}`).join('\n');
+  const proofHtml = (v.proof||[]).join('\n  ');
+  const fixHtml = v.fix ? `${v.fix.kind} → ${v.fix.target||''}` : '—';
+  const suite = v.suite ? `before: ${v.suite.before.passed}✓/${v.suite.before.failed}✗ · after: ${v.suite.after.passed}✓/${v.suite.after.failed}✗` : '—';
+  $('modal-content').innerHTML = `
+    <h3>${icons[st]} ${v.repo} <button class="close-btn" onclick="closeModal()">✕</button></h3>
+    <div class="meta">verdict: <b>${v.verdict}</b> · advisory: ${v.advisory?.id||''} · ${v.advisory?.package||''} ${v.advisory?.affected_range||''}</div>
+    <div class="section"><h4>Reason</h4><p style="font-size:14px;line-height:1.65">${v.reason||''}</p></div>
+    <div class="section"><h4>Call path</h4><div class="code-block">${pathHtml||'—'}</div></div>
+    <div class="section"><h4>Proof tests</h4><div class="code-block">  ${proofHtml||'—'}</div></div>
+    <div class="section"><h4>Fix</h4><div class="code-block">${fixHtml}</div></div>
+    <div class="section"><h4>Test suite</h4><div class="code-block">${suite}</div></div>
+    ${v.follow_ups&&v.follow_ups.length?`<div class="section"><h4>Follow-ups</h4><div class="code-block">${v.follow_ups.map(f=>'· '+f).join('\n')}</div></div>`:''}
+    ${liveRunId?`<div class="section"><h4>Raw</h4><div class="code-block"><a style="color:var(--blue)" href="${API_BASE}/artifacts/${liveRunId}/${repo}/verdict.json" target="_blank">verdict.json ↗</a></div></div>`:''}`;
+  $('modal').classList.add('open');
+}
+
+function buildGrid(){
+  const g=$('repo-grid'); g.innerHTML='';
+  REPOS.forEach((r,i)=>{
+    const t=document.createElement('div');
+    t.className='tile scanning'; t.id='tile-'+i; t.dataset.repo=r.name;
+    t.innerHTML=`<span class="agent-dot" style="background:var(--blue);animation:pulse 1s infinite"></span>
+      <div class="repo-name">📦 ${r.name}</div>
+      <span class="status-badge st-scanning"><span class="spinner"></span> SCANNING</span>
+      <div class="sub">agent dispatched…</div>
+      <div class="progress-bar"><div id="pb-${i}"></div></div>`;
+    t.onclick=()=>openDetail(i);
+    g.appendChild(t);
+  });
+  $('scan-log').innerHTML='';
+  $('cost-agents').textContent=REPOS.length+' / '+REPOS.length; $('cost-in').textContent='0'; $('cost-out').textContent='0';
+  $('cost-total').textContent='$0.00'; $('cost-bar-fill').style.width='0%';
+}
+
+function setPipe(i,state){
+  const el=$('ps-'+i); if(!el) return;
+  el.className='pipe-step '+state;
+}
+
+function runPipeline(){
+  const seq=[[0,'running',300],[0,'done',600],[1,'running',900],[1,'done',1400],
+    [2,'running',1700],[2,'done',2200],[3,'running',2500],[3,'done',9000],
+    [4,'running',9300],[4,'done',10500],[5,'running',10800],[5,'paused',12000]];
+  seq.forEach(([i,s,delay])=>setTimeout(()=>setPipe(i,s),delay));
+}
+
+function runSimulation(){
+  elapsedSec=0; $('elapsed').textContent='00:00';
+  clearInterval(scanTimer);
+  scanTimer=setInterval(()=>{
+    elapsedSec++;
+    $('elapsed').textContent=String(Math.floor(elapsedSec/60)).padStart(2,'0')+':'+String(elapsedSec%60).padStart(2,'0');
+    // cost ticker
+    const progress=Math.min(1,elapsedSec/192);
+    const totalCost=(0.44*progress).toFixed(2);
+    $('cost-total').textContent='$'+totalCost;
+    $('cost-in').textContent=Math.round(520000*progress).toLocaleString();
+    $('cost-out').textContent=Math.round(98000*progress).toLocaleString();
+    $('cost-bar-fill').style.width=(progress*100)+'%';
+  },1000);
+
+  const logEl=$('scan-log');
+  const tileMap={2:6,3:5,4:4,5:0,6:1,7:2,8:7,9:3};
+  let step=0;
+  const reveal=()=>{
+    if(step>=SCAN_LOGS.length){
+      clearInterval(scanTimer); scanDone=true;
+      setPipe(5,'done');
+      setTimeout(()=>{ if(voiceOn) speak('Scan complete. Four affected and fixed, four proven not affected. Report ready for approval.'); },600);
+      return;
+    }
+    const [cls,msg]=SCAN_LOGS[step];
+    const l=document.createElement('div'); l.className='line '+cls;
+    l.innerHTML=`<span class="t">[T+${String(Math.floor(elapsedSec/60)).padStart(2,'0')}:${String(elapsedSec%60).padStart(2,'0')}]</span>${msg}`;
+    logEl.appendChild(l); logEl.scrollTop=logEl.scrollHeight;
+
+    const ti=tileMap[step]; if(ti!==undefined && ti<REPOS.length){
+      const r=REPOS[ti];
+      if(ti!==undefined){
+        const st=r.status; setTile(ti,st);
+      }
+    }
+    const pb=$('pb-'+((step*7)%REPOS.length)); if(pb) pb.style.width=Math.min(100,(step+1)*5)+'%';
+    step++;
+    setTimeout(reveal, 420+Math.random()*380);
+  };
+  setTimeout(reveal,600);
+}
+
+function setTile(i,status){
+  const t=$('tile-'+i); if(!t) return;
+  const r=REPOS[i];
+  t.className='tile '+status;
+  const dots={scanning:'var(--blue)',affected:'var(--red)',fixed:'var(--yellow)',safe:'var(--green)',human:'var(--purple)'};
+  const badges={
+    scanning:'<span class="status-badge st-scanning"><span class="spinner"></span> SCANNING</span>',
+    affected:'<span class="status-badge st-affected">🔴 AFFECTED</span>',
+    fixed:'<span class="status-badge st-fixed">🟡 FIXED</span>',
+    safe:'<span class="status-badge st-safe">🟢 NOT AFFECTED</span>',
+    human:'<span class="status-badge st-human">🟣 HUMAN</span>'};
+  t.innerHTML=`<span class="agent-dot" style="background:${dots[status]}"></span>
+    <div class="repo-name">📦 ${r.name}</div>${badges[status]}
+    <div class="sub">${r.time} · $${r.cost.toFixed(2)} · ${r.tokens} tok</div>`;
+  t.onclick=()=>openDetail(i);
+}
+
+// ═══════════════════════════════════════════
+//  MODAL
+// ═══════════════════════════════════════════
+function openDetail(i){
+  const r=REPOS[i], d=r.detail;
+  const icons={fixed:'🟡',affected:'🔴',safe:'🟢',human:'🟣'};
+  $('modal-content').innerHTML=`
+    <h3>${icons[r.status]} ${r.name} <button class="close-btn" onclick="closeModal()">✕</button></h3>
+    <div class="meta">scanned in ${r.time} · $${r.cost.toFixed(2)} · ${r.tokens} tokens · agent: vibe-headless + mistral-large-4-0</div>
+    <div class="section"><h4>Verdict</h4><div class="verdict-box ${d.vc}">${d.verdict}</div></div>
+    <div class="section"><h4>Agent summary</h4><p style="font-size:14px;line-height:1.65">${d.summary}</p></div>
+    <div class="section"><h4>Call route</h4><div class="code-block">${d.route}</div></div>
+    <div class="section"><h4>Patch diff</h4><div class="code-block">${d.diffBefore}\n${d.diffAfter}</div></div>
+    ${r.status==='fixed'||r.status==='affected'?`
+    <div class="section"><h4>⚔ Exploit replay</h4>
+      <div class="exploit-box" id="exploit-box">
+        <div style="color:var(--muted);margin-bottom:8px">${r.ep} · forged JWS (empty signatures[])</div>
+        <div id="exploit-lines"></div>
+        <button class="replay-btn" onclick="replayExploit(${i})">▶ Replay attack</button>
+      </div>
+    </div>`:''}
+    <div class="section"><h4>Proof test — vulnerable (authlib 1.8.0)</h4><div class="test-result ${d.tb.startsWith('❌')?'fail':'pass'}">${d.tb}</div></div>
+    <div class="section"><h4>Proof test — fixed (authlib 1.9.0)</h4><div class="test-result ${d.ta.startsWith('✅')?'pass':'fail'}">${d.ta}</div></div>`;
+  $('modal').classList.add('open');
+}
+function closeModal(){ $('modal').classList.remove('open'); }
+
+function replayExploit(i){
+  const box=$('exploit-lines'); if(!box) return;
+  const r=REPOS[i];
+  const lines= r.status==='fixed'
+    ? [['req',`→ ${r.ep} HTTP/1.1`],['req','→ Authorization: Bearer {"payload":"…","signatures":[]}  (forged)'],['resp-200','← HTTP 200 OK  ⚠ accepted on vulnerable authlib 1.8.0'],['resp-401','← HTTP 401 Unauthorized  ✓ rejected on fixed authlib 1.9.0']]
+    : [['req',`→ ${r.ep} HTTP/1.1`],['req','→ Authorization: Bearer {"payload":"…","signatures":[]}'],['resp-200','← HTTP 200 OK  ⚠ exploit succeeded']];
+  box.innerHTML='';
+  lines.forEach((l,idx)=>{
+    setTimeout(()=>{
+      const el=document.createElement('div');
+      el.className='exploit-line '+l[0];
+      el.textContent=l[1]; box.appendChild(el);
+    }, idx*700);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  AUDIT
+// ═══════════════════════════════════════════
+function showAudit(){
+  showView('view-audit');
+  const list=$('audit-list'); list.innerHTML='';
+  AUDIT_RECORDS.forEach((r,i)=>{
+    const el=document.createElement('div');
+    el.className='audit-entry '+r[4]; el.style.animationDelay=(i*0.025)+'s';
+    el.innerHTML=`<span class="ts">${r[0]}</span><span class="agent">${r[1]}</span><span class="action">${r[2]}: ${r[3]}</span><span class="hash">sha256:${r[5]}</span><span class="badge-verify">✓</span>`;
+    list.appendChild(el);
+  });
+}
+function verifyAudit(btn){
+  btn.textContent='Verifying…'; btn.disabled=true;
+  setTimeout(()=>{ btn.textContent='✓ All '+AUDIT_RECORDS.length+' verified'; btn.style.color='var(--green)';
+    setTimeout(()=>{btn.textContent='🔍 Verify offline';btn.style.color='';btn.disabled=false;},3000);
+  },1200);
+}
+
+// ═══════════════════════════════════════════
+//  REPORT + VOICE + CONFETTI
+// ═══════════════════════════════════════════
+function startReportTimer(){
+  let rem=23*3600+41*60+7; clearInterval(reportTimer);
+  reportTimer=setInterval(()=>{ rem--;
+    const el=$('report-timer'); if(!el) return;
+    el.textContent=String(Math.floor(rem/3600)).padStart(2,'0')+':'+String(Math.floor(rem%3600/60)).padStart(2,'0')+':'+String(rem%60).padStart(2,'0');
+  },1000);
+}
+async function approveReport(){
+  if(liveRunId){
+    try { await fetch(`${API_BASE}/runs/${liveRunId}/approve`, {method:'POST'}); } catch(e){}
+  }
+  $('report-content').style.display='none'; $('success-msg').classList.add('show');
+  clearInterval(reportTimer); confetti();
+  speak('Report approved. A human submits it to ENISA within the twenty-four hour window. All verdicts are signed and verifiable offline.');
+}
+function toggleVoice(){
+  voiceOn=!voiceOn;
+  const b=$('voice-btn'); b.textContent=voiceOn?'🔊 Voxtral voice: ON':'🔊 Voxtral voice: OFF';
+  b.classList.toggle('on',voiceOn);
+  if(voiceOn) speak('Voice alerts enabled. I will read security verdicts aloud.');
+}
+function voiceAlert(){ speak('Early warning report drafted. Four products affected and fixed, four proven not affected. Approve to hand it to a human for ENISA within the twenty-four hour window.'); }
+function speak(text){
+  if(!voiceOn || !('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.rate=1.05; u.pitch=0.9;
+  speechSynthesis.speak(u);
+}
+function confetti(){
+  const c=$('confetti-canvas'), ctx=c.getContext('2d');
+  c.width=innerWidth; c.height=innerHeight;
+  const colors=['#f59e0b','#ef4444','#22c55e','#3b82f6','#a855f7','#06b6d4'];
+  const parts=Array.from({length:150},()=>({
+    x:Math.random()*c.width, y:-20-Math.random()*c.height*0.5,
+    w:6+Math.random()*6, h:8+Math.random()*8,
+    vy:2+Math.random()*3, vx:-1.5+Math.random()*3,
+    r:Math.random()*Math.PI, vr:-0.1+Math.random()*0.2,
+    color:colors[Math.floor(Math.random()*colors.length)]
+  }));
+  let frames=0;
+  (function anim(){
+    ctx.clearRect(0,0,c.width,c.height);
+    parts.forEach(p=>{ p.x+=p.vx; p.y+=p.vy; p.r+=p.vr;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.r);
+      ctx.fillStyle=p.color; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h); ctx.restore();
+    });
+    if(++frames<300) requestAnimationFrame(anim);
+    else ctx.clearRect(0,0,c.width,c.height);
+  })();
+}
+
+// ═══════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════
+function loadSample(){ $('advisory-input').value='CVE-2026-96760 — Authlib < 1.9.0: JsonWebSignature.deserialize_json accepts a JWS with an empty signatures array, so a forged token passes verification. Any service decoding attacker-supplied JSON JWS with default options is affected. CVSS 9.8 CRITICAL.'; }
+function resetDemo(){ clearInterval(scanTimer); clearInterval(reportTimer); clearInterval(pollTimer); liveRunId=null; scanDone=false; showView('view-input'); }
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter' && $('view-input').classList.contains('active') && document.activeElement.tagName!=='TEXTAREA') startScan();
+});
+</script>
+</body>
+</html>
