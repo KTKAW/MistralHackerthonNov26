@@ -27,3 +27,17 @@ of proposed, human-reviewed gate-rule/watchlist entries (`human_reviewed: false`
 Generated artifacts land only under the test out-dir (default
 `tools/scan/out/simulate/`); the single workflow-facing output is the clearly
 marked `runs/<run_id>/sim-triage.json`.
+
+## Contract with the Le Chonk gate
+
+`sim-triage.json` (schema `sim-triage/1`, written atomically) is consumed by
+`orchestrator/gate.py::_apply_sim_triage` via `orchestrator/kbscan.sim_triage_for_run`,
+which reads exactly `defenses.breaches[]` and `feedback.entries[]`
+(`{type: gate-rule|watchlist, advisory_id, reason, proposed_by, human_reviewed}`).
+`simulate.py` builds the document in `build_sim_triage_doc()`;
+`tools/scan/tests/test_sim_contract.py` proves the contract against the real gate,
+proves a 10k-entry oversized `sim-triage.json` is size-capped and ignored, and checks
+the `watchlist.md` leads (general terms only). Run them with:
+
+    uv run pytest -q tools/scan/tests/test_sim_contract.py
+    python3 tools/scan/simulate.py selftest

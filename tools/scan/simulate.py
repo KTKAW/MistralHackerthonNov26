@@ -39,6 +39,14 @@ Usage:
       sim-triage.json also carries a 'feedback' section: proposed, human-reviewed
       gate-rule/watchlist entries derived from misses (breaches), e.g.
       {type:'gate-rule', advisory_id, reason, proposed_by:'simulate', human_reviewed:false}.
+      The exact shape the Le Chonk gate consumes (orchestrator/gate.py::_apply_sim_triage,
+      via orchestrator/kbscan.sim_triage_for_run) is: defenses.breaches[] (list of
+      {kind, detail}) and feedback.entries[] ({type:'gate-rule'|'watchlist',
+      advisory_id, reason, proposed_by, human_reviewed}) — built by
+      build_sim_triage_doc() so the contract has a single source of truth.
+      watchlist-type entries additionally become leads in watchlist.md, in general
+      terms only (no fake ids, URLs, payloads or markup — sanitised, deduped,
+      marked SIMULATED + human review pending).
       Metrics (per cycle and cumulative across loop cycles): fakes_generated, rejected,
       misses (misses == breaches; every miss listed as {kind, detail} so it can feed
       back as an explorer query / gate rule — the reward signal is rejected/total),
@@ -47,7 +55,10 @@ Usage:
       every fake carries status:'unverified' and a SIMULATED marker; fakes are written
       ONLY to the sim out-dir and runs/<run_id>/sim-triage.json — never into the real
       latest.json / triage.json — and the run phase asserts that quarantine by grepping
-      the REAL merged outputs for SIMULATED markers (assertion h). Any miss -> exit 1.
+      the REAL merged outputs for SIMULATED markers (assertion h). The breaches list
+      written into sim-triage.json is itself capped (MAX_TRIAGE_BREACHES) so a long
+      loop cannot grow the file without bound; the gate reads it size-capped anyway.
+      Any miss -> exit 1.
   python3 tools/scan/simulate.py loop --out ... --interval 5 --max-runs 3 [--run-id latest] [--max-fakes 25]
       Run generate+run repeatedly (each cycle a fresh batch) to show continuous
       fuzzing; sim-triage.json carries cumulative metrics across cycles.
@@ -83,8 +94,10 @@ Defense assertions (all must PASS, else exit 1):
 Safety: all simulated data is SIMULATED-marked and written only under the test
 out-dir (default tools/scan/out/simulate/), plus the single new file
 runs/<run_id>/sim-triage.json requested by the coordinator for zero-glue pickup by
-the main workflow. No existing file is modified; real feeds, runs/ verdicts and
-advisories/ are only ever read, never written; no secrets; no real model API calls
+the main workflow, plus deduped general-terms-only SIMULATED leads appended to the
+"Open leads" section of watchlist.md (no ids, URLs, payloads or markup; nothing is
+ever applied without human review). Real feeds, runs/ verdicts and advisories/ are
+only ever read, never written; no secrets; no real model API calls
 (KB_SCAN_SPEAK_STUB only). Do not commit generated output.
 """
 from __future__ import annotations
@@ -93,6 +106,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -134,16 +148,22 @@ def load_cases() -> dict:
     return json.loads(CASES_FILE.read_text(encoding="utf-8"))
 
 
-def write_json_atomic(path: Path, data: object) -> None:
+def write_text_atomic(path: Path, text: str) -> None:
+    """Write text to path atomically (tmp file in the same dir + os.replace), so a
+    reader never sees a half-written document."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(data, indent=2) + "\n")
+            handle.write(text)
         os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def write_json_atomic(path: Path, data: object) -> None:
+    write_text_atomic(path, json.dumps(data, indent=2) + "\n")
 
 
 def run_cmd(argv: list[str], env: dict | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -200,7 +220,12 @@ def http_get(url: str, timeout: float = 10.0) -> tuple[int, str]:
 
 MAX_FAKES_HARD_CAP = 100
 DEFAULT_MAX_FAKES = 25
+# Flood-proofing on the write side too: the breaches/feedback written into
+# sim-triage.json are capped so a long `loop` cannot grow the file without bound
+# (the gate reads it size-capped at 4 MiB regardless — see orchestrator/kbscan.py).
+MAX_TRIAGE_BREACHES = 100
 INVENTORY_FILE = SCAN_DIR / "inventory.json"
+WATCHLIST_FILE = ROOT / "watchlist.md"
 
 
 def load_inventory() -> dict:
@@ -282,7 +307,11 @@ def build_fake_findings(cases: dict, max_fakes: int, from_inventory: bool = Fals
     Top-up fakes are deterministic flood variants: each is status:'unverified' with
     a SIMULATED marker, so an actor overloading the autonomous agent still only ever
     produces quarantined, unverified noise.
+
+    The cap is enforced here as well as in the CLI (defense in depth): max_fakes is
+    always clamped to the hard cap, so no caller can build more fakes than allowed.
     """
+    max_fakes = clamp_max_fakes(max_fakes)
     base = [dict(f) for f in cases["fake_findings"]]
     if from_inventory:
         base = base + build_inventory_fakes(load_inventory(), cases)
@@ -417,6 +446,160 @@ def build_feedback(misses: list[dict], fake_ids: list[str], inv_fake_ids: list[s
         "note": "Proposals derived from SIMULATED misses/attack patterns; a human reviews before any gate rule or watchlist entry is applied.",
         "human_reviewed": False,
     }
+
+
+# ---------------------------------------------------------------- sim-triage document
+# This is THE output contract with the Le Chonk gate: orchestrator/gate.py
+# ::_apply_sim_triage reads runs/<run_id>/sim-triage.json (size-capped, untrusted)
+# via orchestrator/kbscan.sim_triage_for_run and consumes exactly:
+#   defenses.breaches[]            — list of {kind, detail} (counted in the downgrade note)
+#   feedback.entries[]             — {type: 'gate-rule'|'watchlist', advisory_id: str,
+#                                     reason, proposed_by, human_reviewed}
+# A 'gate-rule' entry with human_reviewed falsy downgrades matching verdicts to
+# needs_human (the only change the gate may ever make). Keep this in sync with
+# tools/scan/patches/gate-sim-triage.patch.md; tools/scan/tests/test_sim_contract.py
+# asserts the contract against the real gate.
+
+
+def build_sim_triage_doc(run_id: str, out_dir: str, assertion_results: list[dict], misses: list[dict],
+                         fake_ids: list[str], inv_fake_ids: list[str], fakes_generated: int,
+                         rejected: int, downgraded: int, neutralised: int, verdicts_validated: int,
+                         cumulative: dict | None = None) -> dict:
+    """Assemble the runs/<run_id>/sim-triage.json document (schema sim-triage/1).
+
+    Breaches/feedback written here are capped at MAX_TRIAGE_BREACHES (flood-proofing
+    on the write side); the full miss list still drives the exit code in cmd_run.
+    """
+    written_misses = misses[:MAX_TRIAGE_BREACHES]
+    cycle_metrics = {
+        "fakes_generated": fakes_generated,
+        "rejected": rejected,
+        "misses": written_misses,
+        "misses_truncated": max(0, len(misses) - len(written_misses)),
+        "downgraded": downgraded,
+        "injected_payloads_neutralised": neutralised,
+        "verdicts_validated": verdicts_validated,
+    }
+    metrics = dict(cumulative or {"fakes_generated": 0, "rejected": 0, "misses": []})
+    metrics["fakes_generated"] = metrics.get("fakes_generated", 0) + fakes_generated
+    metrics["rejected"] = metrics.get("rejected", 0) + rejected
+    metrics.setdefault("misses", [])
+    metrics["misses"] = (metrics["misses"] + misses)[:MAX_TRIAGE_BREACHES]
+
+    feedback = build_feedback(written_misses, fake_ids, inv_fake_ids)
+    defenses = {
+        "fake_count": fakes_generated,
+        "fakes_generated": fakes_generated,
+        "rejected": rejected,
+        "misses": written_misses,
+        "misses_truncated": cycle_metrics["misses_truncated"],
+        "downgraded": downgraded,
+        "injected_payloads_neutralised": neutralised,
+        "verdicts_validated": verdicts_validated,
+        "breaches": written_misses,
+    }
+    return {
+        "schema": "sim-triage/1",
+        "simulated": True,
+        "marker": MARKER,
+        "run_id": run_id,
+        "generated_at": now_iso(),
+        "out_dir": out_dir,
+        "note": "SIMULATED adversarial triage for the Le Chonk workflow; not real threat data.",
+        "assertions": assertion_results,
+        "defenses": defenses,
+        "metrics": {"cycle": cycle_metrics, "cumulative": metrics},
+        "feedback": feedback,
+    }
+
+
+# ---------------------------------------------------------------- watchlist leads
+# watchlist-type feedback entries become leads in watchlist.md — in GENERAL TERMS
+# ONLY: no fake/real advisory ids, no URLs, no payload or markup text. Each lead is
+# marked SIMULATED + human review pending, and deduped so repeated loop cycles do
+# not grow the file.
+
+LEAD_PREFIX = "- **SIMULATED pattern (human review pending).** "
+LEAD_MAX_LEN = 240
+_ADVISORY_ID = re.compile(r"\b(?:CVE|MAL|GHSA|SIM|OSV)-[\w.-]*\d[\w.-]*\b", re.I)
+
+
+def _general_terms(reason: str) -> str:
+    """Reduce a feedback reason to general terms: strip URLs, HTML, markdown links,
+    advisory/fake ids and stray brackets; one line, length-capped."""
+    cleaned = re.sub(r"https?://\S+", " ", str(reason))
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"!?\[[^\]]*\]\([^)]*\)", " ", cleaned)
+    cleaned = _ADVISORY_ID.sub(" ", cleaned)
+    cleaned = cleaned.replace("[", " ").replace("]", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,:;-")
+    if len(cleaned) > LEAD_MAX_LEN:
+        cleaned = cleaned[:LEAD_MAX_LEN - 1] + "…"
+    return cleaned
+
+
+def watchlist_lead_line(entry: dict, run_id: str, stamp: str) -> tuple[str, str]:
+    """(dedupe key, markdown line) for one watchlist-type feedback entry."""
+    core = _general_terms(entry.get("reason", "")) or "unnamed simulated attack pattern"
+    line = (f"{LEAD_PREFIX}{core} "
+            f"(adversarial simulator, run `{run_id}`, {stamp}; proposed, not applied.)")
+    return core.lower(), line
+
+
+def _existing_lead_keys(text: str) -> set[str]:
+    keys = set()
+    for line in text.splitlines():
+        flat = re.sub(r"\s+", " ", line).strip()
+        if flat.startswith(LEAD_PREFIX):
+            core = flat[len(LEAD_PREFIX):]
+            core = re.sub(r"\s*\(adversarial simulator, run .*?\)\s*$", "", core)
+            keys.add(core.lower())
+    return keys
+
+
+def append_watchlist_leads(entries: list, run_id: str, stamp: str, path: Path = WATCHLIST_FILE) -> int:
+    """Append general-terms-only leads for watchlist-type entries to watchlist.md's
+    'Open leads' section. Deduped by pattern, so repeat runs add nothing new.
+    Returns the number of leads appended."""
+    leads: list[tuple[str, str]] = []
+    for entry in entries or []:
+        if isinstance(entry, dict) and entry.get("type") == "watchlist" and not entry.get("human_reviewed"):
+            leads.append(watchlist_lead_line(entry, run_id, stamp))
+    if not leads:
+        return 0
+    text = path.read_text(encoding="utf-8") if path.exists() else "# Watchlist\n\n## Open leads\n"
+    have = _existing_lead_keys(text)
+    fresh: list[str] = []
+    for key, line in leads:  # dedupe against the file AND within this batch
+        if key not in have:
+            have.add(key)
+            fresh.append(line)
+    if not fresh:
+        return 0
+    lines = text.splitlines()
+    idx = next((i for i, line in enumerate(lines) if line.strip().lower() == "## open leads"), None)
+    if idx is None:
+        if text and not text.endswith("\n"):
+            text += "\n"
+        text += "\n## Open leads\n\n" + "\n".join(fresh) + "\n"
+    else:
+        # append at the end of the Open leads section (before the next heading)
+        end = len(lines)
+        for i in range(idx + 1, len(lines)):
+            if lines[i].startswith("#"):
+                end = i
+                break
+        while end > idx + 1 and lines[end - 1].strip() == "":
+            end -= 1
+        if end == idx + 1:  # empty section: keep a blank line after the heading
+            new_lines = lines + [""] + fresh
+        else:
+            new_lines = lines[:end] + fresh + ([""] + lines[end:] if end < len(lines) else [])
+        text = "\n".join(new_lines)
+        if not text.endswith("\n"):
+            text += "\n"
+    write_text_atomic(path, text)
+    return len(fresh)
 
 
 # ---------------------------------------------------------------- assertion framework
@@ -724,49 +907,18 @@ def cmd_run(out_dir: Path, run_id: str, max_fakes: int = DEFAULT_MAX_FAKES,
 
     fakes_generated = len(fake_ids)
     rejected = sum(1 for f in sim_findings if f.get("status") == "unverified")
-    cycle_metrics = {
-        "fakes_generated": fakes_generated,
-        "rejected": rejected,
-        "misses": misses,
-        "downgraded": downgraded,
-        "injected_payloads_neutralised": neutralised,
-        "verdicts_validated": verdicts_validated,
-    }
-    metrics = dict(cumulative or {"fakes_generated": 0, "rejected": 0, "misses": []})
-    metrics["fakes_generated"] = metrics.get("fakes_generated", 0) + fakes_generated
-    metrics["rejected"] = metrics.get("rejected", 0) + rejected
-    metrics.setdefault("misses", [])
-    metrics["misses"] = metrics["misses"] + misses
-
-    feedback = build_feedback(misses, fake_ids, inv_fake_ids)
-
-    defenses = {
-        "fake_count": fakes_generated,
-        "fakes_generated": fakes_generated,
-        "rejected": rejected,
-        "misses": misses,
-        "downgraded": downgraded,
-        "injected_payloads_neutralised": neutralised,
-        "verdicts_validated": verdicts_validated,
-        "breaches": misses,
-    }
-    triage = {
-        "schema": "sim-triage/1",
-        "simulated": True,
-        "marker": MARKER,
-        "run_id": run_id,
-        "generated_at": now_iso(),
-        "out_dir": str(sim),
-        "note": "SIMULATED adversarial triage for the Le Chonk workflow; not real threat data.",
-        "assertions": assertions.results,
-        "defenses": defenses,
-        "metrics": {"cycle": cycle_metrics, "cumulative": metrics},
-        "feedback": feedback,
-    }
+    triage = build_sim_triage_doc(run_id, str(sim), assertions.results, misses, fake_ids, inv_fake_ids,
+                                  fakes_generated, rejected, downgraded, neutralised, verdicts_validated,
+                                  cumulative=cumulative)
     write_json_atomic(runs_dir / "sim-triage.json", triage)
+    metrics = triage["metrics"]["cumulative"]
     print(f"wrote {runs_dir / 'sim-triage.json'} (SIMULATED) — metrics this cycle: "
           + json.dumps({"fakes_generated": fakes_generated, "rejected": rejected, "misses": len(misses)})
           + f" | cumulative: {json.dumps({k: (len(v) if k == 'misses' else v) for k, v in metrics.items()})}")
+    # watchlist-type feedback entries become leads in watchlist.md, general terms only
+    leads_added = append_watchlist_leads(triage["feedback"].get("entries", []), run_id, triage["generated_at"])
+    if leads_added:
+        print(f"appended {leads_added} general-terms SIMULATED lead(s) to {WATCHLIST_FILE}")
 
     if misses:
         print(f"MISSES/BREACHES ({len(misses)}):", file=sys.stderr)
@@ -860,6 +1012,45 @@ def cmd_selftest() -> int:
           and fb["entries"][0]["advisory_id"] == "MAL-2026-9999"
           and any(e["type"] == "watchlist" and e["advisory_id"] == "MAL-2026-9998" for e in fb["entries"])
           and build_feedback([], [], [])["entries"] == [])
+    doc = build_sim_triage_doc("selftest", "/tmp/sim", [], [{"kind": "assertion-a", "detail": "fake MAL-2026-9999 confirmed"}],
+                               ["MAL-2026-9999"], ["MAL-2026-9998"], 1, 1, 0, 4, 0)
+    check("sim-triage doc matches the gate contract: defenses.breaches[] + feedback.entries[] with type/advisory_id/human_reviewed",
+          doc["schema"] == "sim-triage/1" and isinstance(doc["defenses"]["breaches"], list)
+          and doc["defenses"]["breaches"][0]["kind"] == "assertion-a"
+          and all({"type", "advisory_id", "reason", "proposed_by", "human_reviewed"} <= set(e)
+                  for e in doc["feedback"]["entries"])
+          and {e["type"] for e in doc["feedback"]["entries"]} == {"gate-rule", "watchlist"})
+    many = [{"kind": f"k{i}", "detail": f"d{i}"} for i in range(MAX_TRIAGE_BREACHES + 50)]
+    capped = build_sim_triage_doc("selftest", "/tmp/sim", [], many, [], [], 0, 0, 0, 0, 0)
+    check("flood-proofing: breaches written to sim-triage.json are capped at MAX_TRIAGE_BREACHES",
+          len(capped["defenses"]["breaches"]) == MAX_TRIAGE_BREACHES
+          and capped["defenses"]["misses_truncated"] == 50
+          and len(json.dumps(capped).encode()) < 1024 * 1024)
+    with tempfile.TemporaryDirectory() as tmp:
+        wl = Path(tmp) / "watchlist.md"
+        wl.write_text("# Watchlist\n\n## Open leads\n\n- **An existing lead.** Something.\n", encoding="utf-8")
+        nasty = [{"type": "watchlist", "human_reviewed": False,
+                  "reason": "SIMULATED fake MAL-2026-9998 at http://evil-sim.invalid/x <script>alert(1)</script> [click](http://evil-sim.invalid) CVE-2026-99101"}]
+        # identical patterns in one batch dedupe to a single lead
+        dup = nasty + [dict(nasty[0]), dict(nasty[0])]
+        added = append_watchlist_leads(dup, "selftest", "2026-11-21T00:00:00Z", path=wl)
+        text1 = wl.read_text(encoding="utf-8")
+        added2 = append_watchlist_leads(nasty, "selftest", "2026-11-22T00:00:00Z", path=wl)
+        text2 = wl.read_text(encoding="utf-8")
+        lead = next(l for l in text1.splitlines() if l.startswith(LEAD_PREFIX))
+        check("watchlist lead: appended under Open leads, general terms only (no ids/URLs/markup), deduped on re-run",
+              added == 1 and added2 == 0 and text1 == text2
+              and lead in text1.split("## Open leads")[1]
+              and "MAL-" not in lead and "CVE-" not in lead and "http" not in lead
+              and "<script>" not in lead and "[click]" not in lead and "SIMULATED" in lead
+              and "- **An existing lead.**" in text2)
+        check("gate-rule entries produce no watchlist lead",
+              append_watchlist_leads([{"type": "gate-rule", "advisory_id": "X", "human_reviewed": False}],
+                                     "selftest", "2026-11-21T00:00:00Z", path=wl) == 0)
+        out = Path(tmp) / "doc.json"
+        write_json_atomic(out, {"a": 1})
+        check("atomic write leaves no .tmp files behind",
+              out.exists() and not list(Path(tmp).glob("*.tmp")))
     with tempfile.TemporaryDirectory() as tmp:
         rc = cmd_generate(Path(tmp), "selftest", max_fakes=25)
         check("generate writes shards + manifest into a temp out-dir", rc == 0 and
