@@ -81,7 +81,7 @@ def test_the_stand_ins_answers_cite_lines_that_exist():
     from orchestrator.tests.conftest import FLEET
 
     answers = stub_agent.ground_truth()
-    assert len(answers) == 10 and all(answer["advisories"] and answer["package"] for answer in answers.values())
+    assert len(answers) == 11 and all(answer["advisories"] and answer["package"] for answer in answers.values())
     for app, answer in answers.items():
         for step in answer["path"]:
             line = (FLEET / app / step["file"]).read_text().splitlines()[step["line"] - 1]
@@ -179,6 +179,7 @@ def claim_for(run_id: str, repo: str, advisory: dict) -> dict:
 @pytest.mark.parametrize("repo, advisory, target, proof", [
     ("link-redirector", TORNADO, "6.6.1", "tests/test_proof_cve_2026_126347.py::LegacyRedirectStaysOnSiteTest::test_legacy_redirect_does_not_leave_site"),
     ("html-extractor", SOUPSIEVE, "3.0.2", "tests/test_proof_cve_2026_126193.py::test_deeply_nested_selector_is_handled"),
+    ("mail-intake", MAILPARSER, "4.6.3", "tests/test_proof_cve_2026_129300.py::test_message_with_out_of_range_received_date_is_still_accepted"),
 ])
 def test_a_fresh_advisory_is_proven_and_fixed_on_the_app_that_is_exposed(pipeline, run_id, repo, advisory, target, proof):
     result = gated(run_id, claim_for(run_id, repo, advisory))

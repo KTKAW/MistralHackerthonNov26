@@ -341,6 +341,45 @@
           "note": "mail is written with the standard library; nothing imports mailparser"
         }
       ]
+    },
+    "mail-intake": {
+      "advisories": [
+        "CVE-2026-129300",
+        "GHSA-xhrq-2mqv-q8wx"
+      ],
+      "package": "mail-parser",
+      "verdict": "affected_fixed",
+      "fix_version": "4.6.3",
+      "hidden_route": false,
+      "entry": "POST /inbound",
+      "proof_test": "test_message_with_out_of_range_received_date_is_still_accepted",
+      "why": "The raw message from the mail provider's webhook goes straight to mailparser.parse_from_bytes, which reaches receiveds_format. Only mail-parser's own exceptions are caught, so the error from a Received date with an out-of-range year is not.",
+      "path": [
+        {
+          "file": "src/mail_intake/app.py",
+          "line": 58,
+          "has": "async def inbound",
+          "note": "entry point POST /inbound: the body is the raw message"
+        },
+        {
+          "file": "src/mail_intake/app.py",
+          "line": 69,
+          "has": "summarise(raw)",
+          "note": "the raw bytes go to the parsing helper"
+        },
+        {
+          "file": "src/mail_intake/parsing.py",
+          "line": 38,
+          "has": "mailparser.parse_from_bytes(raw)",
+          "note": "the parse that reaches the flawed function"
+        },
+        {
+          "file": "src/mail_intake/parsing.py",
+          "line": 39,
+          "has": "except MailParserError",
+          "note": "only the parser's own exceptions are caught"
+        }
+      ]
     }
   }
 }

@@ -73,7 +73,7 @@ uv run pytest
 
 ### What was checked, and how
 
-- **83 tests pass** (`uv run pytest`, about 140 s), on the ten-app fleet.
+- **84 tests pass** (`uv run pytest`, about 140 s), on the eleven-app fleet.
 - **It ran on Mistral's hosted Workflows with the five-app fleet**, 21 November: the model read
   the advisory, the five activities started within 234 ms, and 21 s after the start the run was
   waiting for approval with five tiles: `auth-gateway` and `billing-api` affected, proven and
@@ -171,9 +171,9 @@ uv run pytest
     timeout, on a wiped work copy, would let those repositories run again. Not done: it changes
     the brief's one-attempt rule, and `run_repo` would have to clear `src/` first.
 
-### Three fresh advisories and five more apps (21 November)
+### Three fresh advisories and six more apps (21 November)
 
-The fleet grew from five apps to ten, and from one advisory to four. See `docs/FLEET.md`.
+The fleet grew from five apps to eleven, and from one advisory to four. See `docs/FLEET.md`.
 
 - **Where the advisories came from.** GitHub's advisory database, reviewed `pip` advisories of low
   and moderate severity published 1 to 21 November 2026: 72 rows. Three were chosen because each
@@ -184,8 +184,10 @@ The fleet grew from five apps to ten, and from one advisory to four. See `docs/F
 - **Five apps were built**, each by a separate builder and then checked again on a clean copy:
   an exposed and a not-exposed app for Tornado and for Soup Sieve, and a not-exposed app for
   mail-parser (the package is pinned and nothing imports it).
-- **The sixth was not built.** The builder for `mail-intake`, the exposed mail-parser app, was
-  stopped by a safety check at its first command. So the mail-parser advisory has no exposed app.
+- **The sixth was built by hand, later.** The builder for `mail-intake`, the exposed mail-parser
+  app, was stopped by a safety check at its first command and wrote nothing. It was reported, and
+  the app was then written directly once the person running the session said to. Its first
+  version listed the `Received` hops in the wrong order; its own test caught that.
 - **The stand-in now answers per advisory.** An answer belongs to the advisories it names. For
   any other advisory the stand-in checks `requirements.txt` for the package: not listed means
   "no reachable path found", with that as the reason; listed means it asks for a person.
@@ -194,15 +196,16 @@ The fleet grew from five apps to ten, and from one advisory to four. See `docs/F
 
 Checked: the gate proved and fixed the Tornado and Soup Sieve flaws on the fetched apps (the
 proof exits 1 before and 0 after, the suite passes). Three runs on Mistral's hosted Workflows,
-each started by typing only the CVE identifier, ended with ten tiles each:
+each started by typing only the CVE identifier, ended with a tile for every app:
 
 | Typed | Affected, proven and fixed | Has the package, not exposed | Package not pinned | Draft pull request |
 |---|---|---|---|---|
 | `CVE-2026-126347` | `link-redirector` | `docs-portal` | 8 apps | on `link-redirector` |
 | `CVE-2026-126193` | `html-extractor` | `link-checker` | 8 apps | on `html-extractor` |
-| `CVE-2026-129300` | none | `ticket-mailer` | 9 apps | none |
+| `CVE-2026-129300` | `mail-intake` | `ticket-mailer` | 9 apps | on `mail-intake` |
 
-The Soup Sieve run took 136 s, most of it the one model call. The other two took 41 and 58 s.
+The Soup Sieve run took 136 s, most of it the one model call. The Tornado run took 41 s. The
+mail-parser run, repeated with eleven apps once `mail-intake` existed, took 94 s.
 
 ### A pull request for each verified fix (21 November)
 

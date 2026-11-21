@@ -1,5 +1,5 @@
 {
-  "note": "The demo fleet: ten small services, each in its own repository. Five pin authlib 1.8.0 (CVE-2026-96760). Five were built on 21 November 2026 around three advisories published that month: tornado (CVE-2026-126347), soupsieve (CVE-2026-126193) and mail-parser (CVE-2026-129300). Each commit below was reviewed and tested on the old and the fixed version of its package. Fetch them with: uv run python -m orchestrator.fetch_fleet",
+  "note": "The demo fleet: eleven small services, each in its own repository. Five pin authlib 1.8.0 (CVE-2026-96760). Six were built on 21 November 2026 around three advisories published that month: tornado (CVE-2026-126347), soupsieve (CVE-2026-126193) and mail-parser (CVE-2026-129300). Each commit below was reviewed and tested on the old and the fixed version of its package. Fetch them with: uv run python -m orchestrator.fetch_fleet",
   "apps": [
     {
       "name": "auth-gateway",
@@ -50,6 +50,11 @@
       "name": "ticket-mailer",
       "url": "https://github.com/memlish/ticket-mailer.git",
       "commit": "d64ce67d5930bb2706afa2dbc4f3475aa183d3b3"
+    },
+    {
+      "name": "mail-intake",
+      "url": "https://github.com/memlish/mail-intake.git",
+      "commit": "0c9c6a4ed2794c063a23630ae3e3f33ce5ccd1e3"
     }
   ]
 }

@@ -1,6 +1,6 @@
-# The demo fleet: ten apps, four advisories
+# The demo fleet: eleven apps, four advisories
 
-Ten small services, each in its own repository. A run takes one advisory and checks all ten.
+Eleven small services, each in its own repository. A run takes one advisory and checks all eleven.
 For any advisory, a dependency scanner flags every app that pins the package. The tool's job
 is to tell apart the apps where the flaw can be reached from the apps where it cannot.
 
@@ -22,7 +22,7 @@ Each was reproduced on the old and the fixed version before any app was written.
 uv run python -m orchestrator.fetch_fleet
 ```
 
-This puts the ten apps in `runs/_fleet/`, each at the commit pinned in `orchestrator/fleet.json`.
+This puts the eleven apps in `runs/_fleet/`, each at the commit pinned in `orchestrator/fleet.json`.
 The tool uses that folder as its fleet from then on, unless `LE_CHONK_FLEET_ROOT` says otherwise.
 The apps land as plain files without `.git`.
 
@@ -84,15 +84,13 @@ Checked by hand on 21 November 2026 on clean copies, Python 3.12, offline. "Prob
 
 | App | Case | Entry point | Probe on 4.6.2 | Probe on 4.6.3 | Tests on both | Tile it should end on |
 |---|---|---|---|---|---|---|
+| `mail-intake` | Exposed: raw mail from the provider's webhook goes to `mailparser.parse_from_bytes`, and only mail-parser's own exceptions are caught | `POST /inbound` | `OverflowError` | 201 | 8 pass | Affected, proven and fixed |
 | `ticket-mailer` | Not exposed: the package is pinned but no file imports it. The service only writes mail | `POST /tickets/{id}/notify` | no error, 35 requests | no error | 8 pass | No reachable path found |
-
-There is no exposed app for the mail-parser advisory. One was planned (`mail-intake`); the
-builder for it was stopped by a safety check before it wrote anything, and it was not built.
 
 For an advisory about a package an app does not pin, the right tile is "No reachable path
 found", and the stand-in says exactly that: `requirements.txt` does not list the package.
 
-The gate has confirmed the four "affected, proven and fixed" rows on its own: for each, the
+The gate has confirmed the five "affected, proven and fixed" rows on its own: for each, the
 proof test fails on the old version and passes on the fixed one, and the suite passes after the
 fix. The other rows rest on the hand check. The gate runs no code for "not affected" or "needs
 a human".
@@ -104,7 +102,7 @@ app mentions a flaw, an advisory or its own verdict.
 
 - `orchestrator/tests/fixtures/fleet_answers/<app>/`: `truth.md` (the code path as `file:line`),
   `verify_trigger.py` (the probe), and for the Authlib apps `input.json` (the forged token). The
-  two exposed November apps also have `proof.py`, the proof test the stand-in adds.
+  three exposed November apps also have `proof.py`, the proof test the stand-in adds.
 - `orchestrator/stub_answers.json`: the same answers in the form the stand-in worker reads, each
   tied to its advisory. A test checks that every line it cites is in the fetched app.
 
@@ -125,7 +123,7 @@ setting on.
 - **`profile-api` is the open case.** An agent could turn the setting on in a test, prove the flaw,
   and claim "affected". The gate would accept that. Whether "needs a human" is what a real agent
   says has to be rehearsed.
-- **Ten agents at once is untested.** Three worked on 21 November.
+- **Eleven agents at once is untested.** Three worked on 21 November.
 - **The two OSV records for the Soup Sieve advisory disagree on the upper bound.** The CVE record
   says "until 3.0" and the GitHub advisory says fixed in 3.0.2. The reader answered `<3.0.2` in
   one run and `<3.0` in another. The fix the gate verified is 3.0.2.
