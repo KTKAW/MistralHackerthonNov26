@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>le-chonk · system design</title>
+<style>
+  :root { --ink: #1d1d1b; --muted: #6b6b66; --paper: #fffdf8; --accent: #8a2c1d; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+         font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; line-height: 1.55; }
+  main { max-width: 52rem; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+  .kicker { font: 600 0.72rem/1 -apple-system, "Helvetica Neue", sans-serif; letter-spacing: 0.12em;
+            text-transform: uppercase; color: var(--muted); margin: 0 0 0.6rem; }
+  h1 { font-weight: 400; font-size: 2rem; margin: 0 0 1rem; }
+  h2 { font-weight: 400; font-size: 1.35rem; margin: 3rem 0 0.4rem; }
+  .lede { margin: 0 0 1.5rem; }
+  figure { margin: 1.6rem 0; }
+  figcaption { font-size: 0.85rem; color: var(--muted); font-style: italic; margin-top: 0.6rem; }
+  svg text { font-family: -apple-system, "Helvetica Neue", sans-serif; }
+  code { font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+  th { text-align: left; font: 600 0.7rem/1.2 -apple-system, "Helvetica Neue", sans-serif; letter-spacing: 0.08em;
+       text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--ink); padding: 0.4rem 0.6rem 0.4rem 0; }
+  td { border-bottom: 1px solid #e4e0d6; padding: 0.4rem 0.6rem 0.4rem 0; vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+  ul { padding-left: 1.2rem; }
+  li { margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<main>
+<p class="kicker">le-chonk · system design · tested 21 November 2026</p>
+<h1>System design</h1>
+<p class="lede">One advisory goes in. One Le Chonk agent per repository decides whether the flaw can be reached, proves it
+with a test, and fixes it. Out come a verdict per repository and a draft of the 24-hour early warning. The orchestrator
+is a Mistral Workflows workflow. On 21 November 2026 we ran the core path for real: three agents in parallel inside one
+workflow, each returning a correct verdict that we then re-checked by hand. The web page, the gate and the report are
+designed here but not built yet.</p>
+
+<!-- ===================================================================== -->
+<figure>
+<svg viewBox="0 0 800 612" width="100%" role="img" aria-label="A security engineer uses the web page in a browser. The web page and a Mistral Workflows worker run on our machine. Mistral hosts the Workflows coordinator, which keeps the run history; the worker connects out to it for tasks and signals. The workflow runs top to bottom: intake, read advisory, triage, verify, report. Read advisory makes one chat API call to Le Chonk. Triage starts one activity per repository in parallel with asyncio.gather; each activity starts a headless Vibe process, heartbeats every ten seconds, and returns verdict.json and export.json. Each Vibe worker calls Le Chonk over the chat API from outside the sandbox. Its shell commands pass through the pre_tool hook, the douane wrapper and sandbox-exec, with no network. Its file tools pass through a path hook that is still to be built. Both write only into the work copy under runs. The demo fleet is copied into each work copy and packages come from a local wheelhouse. The rules gate re-runs each proof through the same sandbox. The report step fills early-warning.md from gated verdicts, then the workflow pauses until a person sends an approve signal. That person submits the report to ENISA's Single Reporting Platform.">
+  <defs>
+    <marker id="k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d1d1b"/></marker>
+    <marker id="s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d1d1b"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1f5f8b"/></marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a4b8c"/></marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5651d"/></marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#999"/></marker>
+  </defs>
+
+  <!-- ===== top row: operator and model ===== -->
+  <rect x="20" y="10" width="165" height="46" rx="5" fill="#7a4b8c" fill-opacity="0.08" stroke="#7a4b8c"/>
+  <text x="102" y="30" font-size="11" text-anchor="middle" font-weight="600" fill="#7a4b8c">Mistral Workflows</text>
+  <text x="102" y="46" font-size="9" text-anchor="middle" fill="#6b6b66">hosted coordinator · run history</text>
+  <line x1="102" y1="58" x2="102" y2="84" stroke="#7a4b8c" stroke-width="1.1" marker-start="url(#p)" marker-end="url(#p)"/>
+  <text x="112" y="75" font-size="9" fill="#7a4b8c">tasks · signals</text>
+
+  <rect x="200" y="10" width="180" height="46" rx="5" fill="none" stroke="#1d1d1b"/>
+  <text x="290" y="30" font-size="11" text-anchor="middle" font-weight="600">Security engineer · browser</text>
+  <text x="290" y="46" font-size="9" text-anchor="middle" fill="#6b6b66">pastes the advisory · approves</text>
+  <line x1="290" y1="58" x2="290" y2="100" stroke="#1d1d1b" stroke-width="1.2" marker-start="url(#k)" marker-end="url(#k)"/>
+  <text x="296" y="82" font-size="9" fill="#6b6b66">HTTP</text>
+
+  <rect x="400" y="10" width="390" height="46" rx="5" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="595" y="30" font-size="13" text-anchor="middle" font-weight="600">Model · Le Chonk (mistral-large-4-0)</text>
+  <text x="595" y="46" font-size="9" text-anchor="middle" fill="#6b6b66">two callers: the advisory reader, once per run, and every Vibe worker</text>
+
+  <!-- chat API: read advisory ⇄ model -->
+  <polyline points="172,182 410,182 410,58" fill="none" stroke="#1d1d1b" stroke-width="1.2" marker-start="url(#k)" marker-end="url(#k)"/>
+  <text x="200" y="176" font-size="9" font-weight="600">chat API · one call</text>
+  <text x="200" y="196" font-size="9" fill="#6b6b66">returns library · versions · function</text>
+
+  <!-- chat API: model ⇄ Vibe -->
+  <line x1="595" y1="58" x2="595" y2="144" stroke="#1d1d1b" stroke-width="1.6" marker-start="url(#k)" marker-end="url(#k)"/>
+  <text x="606" y="71" font-size="10" font-weight="600">chat API · HTTPS</text>
+  <text x="606" y="83" font-size="9" fill="#6b6b66">from Vibe itself, outside the sandbox</text>
+
+  <!-- ===== HOST: orchestrator ===== -->
+  <rect x="10" y="86" width="390" height="430" rx="7" fill="none" stroke="#1d1d1b" stroke-width="1.4"/>
+  <text x="30" y="490" font-size="12" font-weight="600">Workflows worker = HOST</text>
+  <text x="30" y="504" font-size="9" fill="#6b6b66">our machine · connects out to Mistral</text>
+
+  <!-- pipeline, top to bottom -->
+  <rect x="30" y="106" width="140" height="40" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="100" y="122" font-size="10" text-anchor="middle">intake</text>
+  <text x="100" y="137" font-size="8" text-anchor="middle" fill="#6b6b66">run starts · clock starts</text>
+  <line x1="100" y1="146" x2="100" y2="160" stroke="#1d1d1b" marker-end="url(#s)"/>
+
+  <rect x="30" y="162" width="140" height="40" rx="4" fill="#2f6b3a" fill-opacity="0.1" stroke="#2f6b3a"/>
+  <text x="100" y="178" font-size="10" text-anchor="middle">read advisory</text>
+  <text x="100" y="193" font-size="8" text-anchor="middle" fill="#6b6b66">one model call · advisory.json</text>
+  <line x1="100" y1="202" x2="100" y2="216" stroke="#1d1d1b" marker-end="url(#s)"/>
+
+  <rect x="30" y="218" width="140" height="96" rx="4" fill="#7a4b8c" fill-opacity="0.1" stroke="#7a4b8c"/>
+  <text x="100" y="262" font-size="10" text-anchor="middle">triage</text>
+  <text x="100" y="277" font-size="8" text-anchor="middle" fill="#6b6b66">one activity per repository</text>
+  <line x1="100" y1="314" x2="100" y2="328" stroke="#1d1d1b" marker-end="url(#s)"/>
+
+  <rect x="30" y="330" width="140" height="78" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="100" y="364" font-size="10" text-anchor="middle">verify</text>
+  <text x="100" y="379" font-size="8" text-anchor="middle" fill="#6b6b66">re-runs every proof</text>
+  <line x1="100" y1="408" x2="100" y2="418" stroke="#1d1d1b" marker-end="url(#s)"/>
+
+  <rect x="30" y="420" width="140" height="40" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="100" y="436" font-size="10" text-anchor="middle">report</text>
+  <text x="100" y="451" font-size="8" text-anchor="middle" fill="#6b6b66">then waits for approval</text>
+
+  <!-- side column: what each step expands to -->
+  <rect x="190" y="102" width="200" height="52" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="290" y="119" font-size="12" text-anchor="middle">Web · FastAPI :8000</text>
+  <text x="290" y="133" font-size="9" text-anchor="middle" fill="#6b6b66">grid of repository tiles · 24 h clock</text>
+  <text x="290" y="146" font-size="9" text-anchor="middle" fill="#6b6b66">starts the run · sends approve</text>
+  <line x1="188" y1="126" x2="172" y2="126" stroke="#1d1d1b" marker-end="url(#s)"/>
+
+  <rect x="190" y="218" width="200" height="96" rx="4" fill="#7a4b8c" fill-opacity="0.08" stroke="#7a4b8c"/>
+  <text x="200" y="234" font-size="11" font-weight="600" fill="#7a4b8c">activities · asyncio.gather</text>
+  <text x="200" y="249" font-size="9" fill="#6b6b66">all repositories at once</text>
+  <text x="200" y="262" font-size="9" fill="#6b6b66">each starts Vibe as a subprocess</text>
+  <text x="200" y="275" font-size="9" fill="#6b6b66">heartbeat every 10 s · one attempt</text>
+  <text x="200" y="288" font-size="9" fill="#6b6b66">fresh work copy in runs/&lt;run&gt;/</text>
+  <text x="200" y="301" font-size="9" fill="#6b6b66">returns verdict.json + export.json</text>
+  <line x1="172" y1="266" x2="188" y2="266" stroke="#1d1d1b" marker-start="url(#s)" marker-end="url(#s)"/>
+
+  <rect x="190" y="330" width="200" height="78" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="200" y="346" font-size="11" font-weight="600">rules gate · no model</text>
+  <text x="200" y="361" font-size="9" fill="#6b6b66">proof fails on the vulnerable version</text>
+  <text x="200" y="374" font-size="9" fill="#6b6b66">proof passes on the fixed version</text>
+  <text x="200" y="387" font-size="9" fill="#6b6b66">test count never drops</text>
+  <text x="200" y="400" font-size="9" fill="#6b6b66">no diff in a "not affected" repo</text>
+  <line x1="172" y1="368" x2="188" y2="368" stroke="#1d1d1b" marker-start="url(#s)" marker-end="url(#s)"/>
+
+  <rect x="190" y="416" width="200" height="50" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="200" y="432" font-size="11" font-weight="600">early-warning.md</text>
+  <text x="200" y="446" font-size="9" fill="#6b6b66">CRA Art. 14 draft from gated verdicts</text>
+  <text x="200" y="459" font-size="9" fill="#6b6b66">paused until an approve signal · 24 h</text>
+  <line x1="170" y1="440" x2="188" y2="440" stroke="#1d1d1b" marker-end="url(#s)"/>
+
+  <!-- host ⇄ workers -->
+  <line x1="392" y1="266" x2="433" y2="266" stroke="#7a4b8c" stroke-width="2" marker-start="url(#p)" marker-end="url(#p)"/>
+  <line x1="392" y1="379" x2="445" y2="379" stroke="#1f5f8b" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#b)"/>
+
+  <!-- ===== workers ===== -->
+  <rect x="420" y="86" width="370" height="430" rx="7" fill="none" stroke="#1d1d1b" stroke-width="1.4"/>
+  <text x="432" y="106" font-size="12" font-weight="600">Per-repository workers</text>
+  <text x="778" y="106" font-size="9" text-anchor="end" fill="#6b6b66">×N in parallel</text>
+
+  <!-- stacked cards: N copies of the same worker -->
+  <rect x="447" y="130" width="320" height="366" rx="5" fill="#fffdf8" stroke="#2f6b3a" stroke-opacity="0.4"/>
+  <rect x="441" y="124" width="320" height="366" rx="5" fill="#fffdf8" stroke="#2f6b3a" stroke-opacity="0.6"/>
+  <rect x="435" y="118" width="320" height="366" rx="5" fill="#fffdf8" stroke="#2f6b3a"/>
+  <text x="447" y="136" font-size="11" font-weight="600" fill="#2f6b3a">worker · one repo</text>
+  <text x="743" y="136" font-size="8" text-anchor="end" fill="#6b6b66">own OS process</text>
+
+  <rect x="447" y="146" width="296" height="68" rx="4" fill="#2f6b3a" fill-opacity="0.1" stroke="#2f6b3a"/>
+  <text x="595" y="164" font-size="11" text-anchor="middle" font-weight="600">Vibe 3.1.3 · headless</text>
+  <text x="595" y="179" font-size="9" text-anchor="middle" fill="#6b6b66">VIBE_HOME=vibe-home · --auto-approve</text>
+  <text x="595" y="192" font-size="9" text-anchor="middle" fill="#6b6b66">--workdir runs/&lt;run&gt;/&lt;repo&gt;/src · --trust</text>
+  <text x="595" y="205" font-size="9" text-anchor="middle" fill="#6b6b66">--max-turns 80 · --max-price 3 · --time-limit 560</text>
+
+  <!-- shell path, sandboxed -->
+  <line x1="517" y1="214" x2="517" y2="236" stroke="#1f5f8b" stroke-width="1.6" marker-end="url(#b)"/>
+  <text x="523" y="229" font-size="8" fill="#6b6b66">bash · process_start</text>
+
+  <rect x="447" y="238" width="140" height="30" rx="4" fill="#1f5f8b" fill-opacity="0.1" stroke="#1f5f8b"/>
+  <text x="517" y="251" font-size="10" text-anchor="middle">pre_tool hook</text>
+  <text x="517" y="263" font-size="8" text-anchor="middle" fill="#6b6b66">sandbox2.py · strict</text>
+  <line x1="517" y1="268" x2="517" y2="278" stroke="#1f5f8b" marker-end="url(#b)"/>
+
+  <rect x="447" y="280" width="140" height="30" rx="4" fill="#1f5f8b" fill-opacity="0.1" stroke="#1f5f8b"/>
+  <text x="517" y="293" font-size="10" text-anchor="middle">douane wrapper</text>
+  <text x="517" y="305" font-size="8" text-anchor="middle" fill="#6b6b66">scrubbed environment</text>
+  <line x1="517" y1="310" x2="517" y2="320" stroke="#1f5f8b" marker-end="url(#b)"/>
+
+  <rect x="447" y="322" width="140" height="30" rx="4" fill="#1f5f8b" fill-opacity="0.1" stroke="#1f5f8b"/>
+  <text x="517" y="335" font-size="10" text-anchor="middle">sandbox-exec</text>
+  <text x="517" y="347" font-size="8" text-anchor="middle" fill="#6b6b66">profile.sb · no network</text>
+  <line x1="517" y1="352" x2="517" y2="362" stroke="#1f5f8b" marker-end="url(#b)"/>
+
+  <rect x="447" y="364" width="140" height="30" rx="4" fill="#1f5f8b" fill-opacity="0.1" stroke="#1f5f8b"/>
+  <text x="517" y="377" font-size="10" text-anchor="middle">shell command</text>
+  <text x="517" y="389" font-size="8" text-anchor="middle" fill="#6b6b66">tests · pip · git · python</text>
+  <line x1="517" y1="394" x2="517" y2="410" stroke="#1f5f8b" marker-end="url(#b)"/>
+
+  <!-- file-tool path, not yet sandboxed -->
+  <line x1="650" y1="214" x2="650" y2="236" stroke="#1d1d1b" marker-end="url(#s)"/>
+  <text x="656" y="229" font-size="8" fill="#6b6b66">read · write · edit</text>
+
+  <rect x="603" y="238" width="140" height="30" rx="4" fill="#8a2c1d" fill-opacity="0.05" stroke="#8a2c1d" stroke-dasharray="4 3"/>
+  <text x="673" y="251" font-size="10" text-anchor="middle" fill="#8a2c1d">path hook · to build</text>
+  <text x="673" y="263" font-size="8" text-anchor="middle" fill="#6b6b66">file tools skip the sandbox</text>
+  <line x1="623" y1="268" x2="623" y2="410" stroke="#1d1d1b" marker-end="url(#s)"/>
+
+  <rect x="640" y="294" width="103" height="34" rx="4" fill="none" stroke="#999" stroke-dasharray="3 3"/>
+  <text x="691" y="309" font-size="10" text-anchor="middle" fill="#6b6b66">web tools off</text>
+  <text x="691" y="321" font-size="8" text-anchor="middle" fill="#999">search · open_url</text>
+
+  <text x="633" y="352" font-size="8" fill="#6b6b66">must deny writes outside src/</text>
+  <text x="633" y="363" font-size="8" fill="#6b6b66">and reads of .env and secrets/</text>
+
+  <rect x="447" y="412" width="296" height="60" rx="4" fill="#b5651d" fill-opacity="0.07" stroke="#b5651d"/>
+  <text x="459" y="428" font-size="11" font-weight="600" fill="#b5651d">runs/&lt;run&gt;/&lt;repo&gt;/</text>
+  <text x="459" y="442" font-size="9" fill="#6b6b66">src/ · the work copy, the only writable path</text>
+  <text x="459" y="455" font-size="9" fill="#6b6b66">verdict.json · proof test · fix diff, by the agent</text>
+  <text x="459" y="468" font-size="9" fill="#6b6b66">vibe/export.json · tokens, cost, outcome, by Vibe</text>
+
+  <!-- ===== below ===== -->
+  <!-- ENISA, outside -->
+  <line x1="290" y1="466" x2="290" y2="538" stroke="#999" stroke-dasharray="4 3" marker-end="url(#g)"/>
+  <text x="284" y="532" font-size="9" text-anchor="end" fill="#999">a person approves, then submits</text>
+  <rect x="190" y="540" width="200" height="56" rx="4" fill="none" stroke="#999" stroke-dasharray="4 3"/>
+  <text x="290" y="558" font-size="10" text-anchor="middle" font-weight="600" fill="#6b6b66">ENISA Single Reporting Platform</text>
+  <text x="290" y="572" font-size="9" text-anchor="middle" fill="#999">outside · reviewed by a person</text>
+  <text x="290" y="586" font-size="9" text-anchor="middle" fill="#999">this tool never sends anything</text>
+
+  <!-- fleet and wheelhouse feed the workers -->
+  <line x1="515" y1="538" x2="515" y2="498" stroke="#b5651d" stroke-width="1.6" marker-end="url(#o)"/>
+  <rect x="430" y="540" width="170" height="56" rx="4" fill="#b5651d" fill-opacity="0.07" stroke="#b5651d"/>
+  <text x="515" y="558" font-size="11" text-anchor="middle" font-weight="600" fill="#b5651d">Demo fleet</text>
+  <text x="515" y="572" font-size="9" text-anchor="middle" fill="#6b6b66">8–10 services · 1 real project</text>
+  <text x="515" y="586" font-size="9" text-anchor="middle" fill="#6b6b66">read-only · copied per run</text>
+
+  <line x1="705" y1="538" x2="705" y2="498" stroke="#b5651d" stroke-width="1.6" marker-end="url(#o)"/>
+  <rect x="620" y="540" width="170" height="56" rx="4" fill="#b5651d" fill-opacity="0.07" stroke="#b5651d"/>
+  <text x="705" y="558" font-size="11" text-anchor="middle" font-weight="600" fill="#b5651d">Local wheelhouse</text>
+  <text x="705" y="572" font-size="9" text-anchor="middle" fill="#6b6b66">vulnerable + fixed versions</text>
+  <text x="705" y="586" font-size="9" text-anchor="middle" fill="#6b6b66">installed with pip --no-index</text>
+
+  <!-- legend -->
+  <line x1="24" y1="548" x2="44" y2="548" stroke="#1d1d1b" stroke-width="1.6"/>
+  <text x="50" y="551" font-size="9" fill="#6b6b66">chat API / call</text>
+  <line x1="24" y1="564" x2="44" y2="564" stroke="#7a4b8c" stroke-width="2"/>
+  <text x="50" y="567" font-size="9" fill="#6b6b66">Workflows</text>
+  <line x1="24" y1="580" x2="44" y2="580" stroke="#1f5f8b" stroke-width="2"/>
+  <text x="50" y="583" font-size="9" fill="#6b6b66">sandboxed shell</text>
+  <line x1="24" y1="596" x2="44" y2="596" stroke="#b5651d" stroke-width="1.6"/>
+  <text x="50" y="599" font-size="9" fill="#6b6b66">files</text>
+  <line x1="110" y1="548" x2="130" y2="548" stroke="#8a2c1d" stroke-dasharray="4 3"/>
+  <text x="136" y="551" font-size="9" fill="#6b6b66">to build</text>
+  <line x1="110" y1="564" x2="130" y2="564" stroke="#999" stroke-dasharray="4 3"/>
+  <text x="136" y="567" font-size="9" fill="#6b6b66">human</text>
+</svg>
+<figcaption>The whole system for one run. The orchestrator is a Mistral Workflows workflow. Mistral hosts the coordinator,
+which keeps the run's history. Our worker process connects out to it and runs every step on our own machine. A run
+starts when someone pastes an advisory into the web page, which starts the workflow and the 24-hour clock. The first
+step makes one model call: Le Chonk reads the advisory and returns the library, the affected versions and the flawed
+function as <code>advisory.json</code>. The triage step then starts one activity per repository with
+<code>asyncio.gather</code>. In our test three ran at once. They started within 0.1 s of each other and finished in
+159 s, against 306 s one after another, with no rate-limit errors. Ten at once has not been tried. Each activity
+works on a fresh copy of its repository under <code>runs/&lt;run&gt;/&lt;repo&gt;/src</code>, with its own virtual
+environment, starts a headless Vibe process there and sends a heartbeat every 10 seconds. It is limited to one
+attempt, because a retry would run on a half-changed work copy. Each Vibe process talks to the model itself, outside
+the sandbox, and everything it does to the machine goes through a hook. <code>sandbox2.py</code> rewrites every shell
+command to run through <code>douane</code>, which removes the environment (otherwise Vibe would pass its
+<code>.env</code> on) and runs the command under <code>sandbox-exec</code> with <code>profile.sb</code>. That profile
+blocks the network, blocks writes outside the work area and temporary folders, and makes <code>secrets/</code>
+unreadable. In the test, all 47 shell commands from the three agents ran inside the sandbox. Add the
+<code>douane</code> path to <code>[tools.bash] allowlist</code>, or every command will stop and wait for approval.
+That hook does not cover file tools, so a second, path-checking hook still has to be written (shown dashed). Web
+tools are turned off by name, and packages come only from the wheelhouse. When Vibe exits, the activity returns the
+agent's <code>verdict.json</code> and Vibe's <code>export.json</code>. The gate re-runs every claim before accepting
+it. It re-runs each proof on the vulnerable and the fixed version through the same sandbox, compares test counts and
+checks that "not affected" repositories were left untouched. The gate is not code yet: in the test we ran these checks
+by hand, and all passed. A claim that fails the gate becomes "needs a human". The report step fills the early-warning
+template using only verdicts that passed the gate, and it makes no model call. The workflow then pauses until a
+person sends an "approve" signal, with a 24-hour timeout. In a test the run stayed open until the signal arrived.
+That person submits the report to ENISA. If the worker crashes, the run resumes when a worker comes back. In a test
+that took as long as the activity's timeout, which is why the heartbeat is there; we have not yet confirmed that it
+shortens the wait. By default the worker also sends its logs and traces to Mistral, and
+<code>OTEL_ENABLED=false</code> turns that off. The demo uses Mistral's API. The pitch is that a customer runs the
+open weights on their own hardware, which should only change the endpoint that Vibe and the reader call, but this has
+not been tested. The sandbox has only been tested on macOS. Linux needs <code>bwrap</code> instead of
+<code>sandbox-exec</code>.</figcaption>
+</figure>
+
+<!-- ===================================================================== -->
+<h2>One worker's run</h2>
+<figure>
+<svg viewBox="0 0 800 222" width="100%" role="img" aria-label="A worker reads the advisory facts and the installed library's source, then traces from the service's entry point toward the flawed function. If no outside input can reach the flaw, the tile is Not affected, showing no reachable path found and the code path followed. If it can, the worker writes a proof test through the entry point that fails on the vulnerable version. It then fixes by upgrade or patch from the wheelhouse and re-verifies: the proof passes and old tests still pass, giving Affected, proven and fixed. If no fix passes, the tile is Affected and proven. From any stage, a broken gate rule or exhausted time or budget gives Needs a human.">
+  <defs>
+    <marker id="k2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d1d1b"/></marker>
+  </defs>
+
+  <!-- stages -->
+  <rect x="10" y="30" width="120" height="54" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="70" y="50" font-size="11" text-anchor="middle" font-weight="600">1 · read</text>
+  <text x="70" y="64" font-size="8" text-anchor="middle" fill="#6b6b66">advisory facts</text>
+  <text x="70" y="76" font-size="8" text-anchor="middle" fill="#6b6b66">installed library source</text>
+  <line x1="130" y1="57" x2="146" y2="57" stroke="#1d1d1b" marker-end="url(#k2)"/>
+
+  <rect x="148" y="30" width="120" height="54" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="208" y="50" font-size="11" text-anchor="middle" font-weight="600">2 · trace</text>
+  <text x="208" y="64" font-size="8" text-anchor="middle" fill="#6b6b66">from the entry point</text>
+  <text x="208" y="76" font-size="8" text-anchor="middle" fill="#6b6b66">to the flawed function</text>
+  <line x1="268" y1="57" x2="276" y2="57" stroke="#1d1d1b" marker-end="url(#k2)"/>
+
+  <polygon points="278,57 338,22 398,57 338,92" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="338" y="54" font-size="9" text-anchor="middle">reachable by</text>
+  <text x="338" y="66" font-size="9" text-anchor="middle">outside input?</text>
+  <line x1="398" y1="57" x2="416" y2="57" stroke="#1d1d1b" marker-end="url(#k2)"/>
+  <text x="407" y="50" font-size="9" text-anchor="middle" fill="#6b6b66">yes</text>
+
+  <rect x="418" y="30" width="120" height="54" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="478" y="50" font-size="11" text-anchor="middle" font-weight="600">3 · prove</text>
+  <text x="478" y="64" font-size="8" text-anchor="middle" fill="#6b6b66">test via the entry point</text>
+  <text x="478" y="76" font-size="8" text-anchor="middle" fill="#6b6b66">fails on vulnerable version</text>
+  <line x1="538" y1="57" x2="554" y2="57" stroke="#1d1d1b" marker-end="url(#k2)"/>
+
+  <rect x="556" y="30" width="100" height="54" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="606" y="50" font-size="11" text-anchor="middle" font-weight="600">4 · fix</text>
+  <text x="606" y="64" font-size="8" text-anchor="middle" fill="#6b6b66">upgrade or patch</text>
+  <text x="606" y="76" font-size="8" text-anchor="middle" fill="#6b6b66">from the wheelhouse</text>
+  <line x1="656" y1="57" x2="672" y2="57" stroke="#1d1d1b" marker-end="url(#k2)"/>
+
+  <rect x="674" y="30" width="116" height="54" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="732" y="50" font-size="11" text-anchor="middle" font-weight="600">5 · re-verify</text>
+  <text x="732" y="64" font-size="8" text-anchor="middle" fill="#6b6b66">proof now passes</text>
+  <text x="732" y="76" font-size="8" text-anchor="middle" fill="#6b6b66">old tests still pass</text>
+
+  <!-- branches to tiles -->
+  <line x1="338" y1="92" x2="338" y2="148" stroke="#1d1d1b" marker-end="url(#k2)"/>
+  <text x="344" y="124" font-size="9" fill="#6b6b66">no</text>
+  <line x1="478" y1="84" x2="478" y2="148" stroke="#1d1d1b" marker-end="url(#k2)"/>
+  <text x="484" y="120" font-size="9" fill="#6b6b66">no fix passes</text>
+  <line x1="732" y1="84" x2="732" y2="148" stroke="#1d1d1b" marker-end="url(#k2)"/>
+  <text x="738" y="120" font-size="9" fill="#6b6b66">all green</text>
+
+  <!-- the four tiles -->
+  <rect x="10" y="150" width="230" height="56" rx="4" fill="none" stroke="#999" stroke-dasharray="4 3"/>
+  <text x="22" y="168" font-size="11" font-weight="600" fill="#6b6b66">Needs a human</text>
+  <text x="22" y="182" font-size="9" fill="#6b6b66">from any stage: the proof never failed,</text>
+  <text x="22" y="195" font-size="9" fill="#6b6b66">a gate rule broke, or time or budget ran out</text>
+
+  <rect x="260" y="150" width="150" height="56" rx="4" fill="#2f6b3a" fill-opacity="0.08" stroke="#2f6b3a"/>
+  <text x="335" y="168" font-size="11" text-anchor="middle" font-weight="600" fill="#2f6b3a">Not affected</text>
+  <text x="335" y="182" font-size="9" text-anchor="middle" fill="#6b6b66">"no reachable path found"</text>
+  <text x="335" y="195" font-size="9" text-anchor="middle" fill="#6b6b66">cites the code path</text>
+
+  <rect x="430" y="150" width="150" height="56" rx="4" fill="#8a2c1d" fill-opacity="0.07" stroke="#8a2c1d"/>
+  <text x="505" y="168" font-size="11" text-anchor="middle" font-weight="600" fill="#8a2c1d">Affected and proven</text>
+  <text x="505" y="182" font-size="9" text-anchor="middle" fill="#6b6b66">proof test fails today</text>
+  <text x="505" y="195" font-size="9" text-anchor="middle" fill="#6b6b66">no passing fix yet</text>
+
+  <rect x="620" y="150" width="170" height="56" rx="4" fill="#1f5f8b" fill-opacity="0.08" stroke="#1f5f8b"/>
+  <text x="705" y="168" font-size="10.5" text-anchor="middle" font-weight="600" fill="#1f5f8b">Affected, proven and fixed</text>
+  <text x="705" y="182" font-size="9" text-anchor="middle" fill="#6b6b66">proof test now passes</text>
+  <text x="705" y="195" font-size="9" text-anchor="middle" fill="#6b6b66">fix diff ready for review</text>
+</svg>
+<figcaption>What one worker does, and the four tiles the grid can show. The brief names three verdicts. We add "needs a
+human" so that a timeout or a rejected claim is never shown as a result. A "not affected" tile always says "no
+reachable path found", never "safe", and shows the code path it followed up to the point where it stops. The prompt
+carries three rules, each written after something an agent did in an earlier run: change nothing in a repository found
+not affected, never delete or weaken a test, and never edit the installed library. With those rules in the prompt, the
+three agents in the 21 November test kept all of them. The agent on the unaffected service added only its verdict
+file and put its upgrade advice in the follow-ups. If the fix does not cure a failing test, the failure is reported as
+a follow-up, and the gate checks that the test count has not dropped. If re-verify fails, the tile stays at "affected
+and proven".</figcaption>
+</figure>
+
+<!-- ===================================================================== -->
+<h2>The verdict file</h2>
+<figure>
+<table>
+  <thead><tr><th>Field</th><th>Written by</th><th>Holds</th></tr></thead>
+  <tbody>
+    <tr><td><code>repo</code>, <code>advisory</code></td><td>orchestrator</td><td>Repository name; the advisory ID, package, affected range and flawed function from <code>advisory.json</code></td></tr>
+    <tr><td><code>verdict</code></td><td>agent, then gate</td><td><code>not_affected</code> · <code>affected_proven</code> · <code>affected_fixed</code> · <code>needs_human</code></td></tr>
+    <tr><td><code>reason</code></td><td>agent</td><td>One paragraph. For <code>not_affected</code>, why no reachable path was found</td></tr>
+    <tr><td><code>path</code></td><td>agent</td><td>List of <code>{file, line, note}</code> from the entry point to the flawed function, or to where the trail stops</td></tr>
+    <tr><td><code>proof</code></td><td>agent</td><td>List of test IDs, and their expected result on the vulnerable and the fixed version</td></tr>
+    <tr><td><code>fix</code></td><td>agent</td><td>Upgrade target or patch, and the name of the diff file</td></tr>
+    <tr><td><code>suite</code></td><td>agent</td><td>Passed and failed test counts before and after the fix</td></tr>
+    <tr><td><code>follow_ups</code></td><td>agent</td><td>Other bugs found along the way, such as the crash on a malformed request in test 2</td></tr>
+    <tr><td><code>gate</code></td><td>orchestrator</td><td>Result of each gate rule, from its own re-runs</td></tr>
+    <tr><td><code>usage</code></td><td>orchestrator</td><td>Tokens, cost, seconds and steps, copied from Vibe's <code>export.json</code></td></tr>
+  </tbody>
+</table>
+<figcaption>Agree on this file before the team splits up, because the agent's prompt, the grid and the report all read
+it. There is one file per repository, at <code>runs/&lt;run&gt;/&lt;repo&gt;/verdict.json</code>. The agent writes its own
+fields and the orchestrator adds the rest. In the 21 November test, all three agents wrote valid files with every
+agent field. One agent put two test IDs into a single text value, so <code>proof</code> now holds a list. The gate
+can change <code>verdict</code> to <code>needs_human</code> and to nothing else. The grid shows a tile only after the
+gate has run, so a claim that has not been checked never appears as a result.</figcaption>
+</figure>
+
+<!-- ===================================================================== -->
+<h2>In production</h2>
+<p>This is not for the hackathon. It shows how the same design would run at an enterprise, entirely inside the
+company's own cloud account or data centre, model included if they want that.</p>
+<figure>
+<svg viewBox="0 0 800 632" width="100%" role="img" aria-label="Everything sits inside the enterprise's cloud account or data centre, on a private network. A security engineer signs in to the web app. A feed watcher pulls new advisories through allow-listed egress. The orchestrator filters repositories with the dependency inventory, clones them read-only from the git host, queues one agent job per repository, gates the results, writes drafts to the evidence store and opens draft pull requests. Each agent job runs Vibe in a gVisor or Firecracker sandbox with no internet and no credentials; it can reach only the model gateway and the package mirror. The model gateway holds credentials, sets a budget per run and logs calls, and points at one of three model options: Large 4 on the company's own GPU node pool, a managed endpoint in the company's account, or Mistral's API outside. A person submits the early warning to ENISA.">
+  <defs>
+    <marker id="k3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d1d1b"/></marker>
+    <marker id="s3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1d1d1b"/></marker>
+    <marker id="p3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7a4b8c"/></marker>
+    <marker id="o3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b5651d"/></marker>
+    <marker id="g3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#999"/></marker>
+  </defs>
+
+  <!-- ===== outside the enterprise ===== -->
+  <rect x="20" y="10" width="220" height="46" rx="5" fill="none" stroke="#999" stroke-dasharray="4 3"/>
+  <text x="130" y="30" font-size="11" text-anchor="middle" font-weight="600" fill="#6b6b66">ENISA Single Reporting Platform</text>
+  <text x="130" y="46" font-size="9" text-anchor="middle" fill="#999">outside · the tool never sends to it</text>
+
+  <rect x="300" y="10" width="250" height="46" rx="5" fill="none" stroke="#999"/>
+  <text x="425" y="30" font-size="11" text-anchor="middle" font-weight="600" fill="#6b6b66">Advisory feeds</text>
+  <text x="425" y="46" font-size="9" text-anchor="middle" fill="#999">GitHub Advisory DB · CVE lists · vendor notices</text>
+
+  <rect x="590" y="10" width="200" height="46" rx="5" fill="none" stroke="#999" stroke-dasharray="4 3"/>
+  <text x="690" y="30" font-size="11" text-anchor="middle" font-weight="600" fill="#6b6b66">Mistral API · option 3</text>
+  <text x="690" y="46" font-size="9" text-anchor="middle" fill="#999">hosted by Mistral · leaves your network</text>
+
+  <!-- ===== the enterprise boundary ===== -->
+  <rect x="10" y="76" width="780" height="550" rx="7" fill="none" stroke="#1d1d1b" stroke-width="1.4"/>
+  <text x="775" y="598" font-size="12" text-anchor="end" font-weight="600">Your cloud account or data centre</text>
+  <text x="775" y="612" font-size="9" text-anchor="end" fill="#6b6b66">private network · no internet by default · one Kubernetes cluster</text>
+
+  <!-- crossings of the boundary -->
+  <line x1="120" y1="144" x2="120" y2="58" stroke="#999" stroke-dasharray="4 3" marker-end="url(#g3)"/>
+  <text x="126" y="112" font-size="9" fill="#999">a person submits</text>
+  <line x1="469" y1="58" x2="469" y2="144" stroke="#999" marker-end="url(#g3)"/>
+  <text x="475" y="102" font-size="9" fill="#999">allow-listed egress</text>
+  <line x1="730" y1="118" x2="730" y2="58" stroke="#999" stroke-dasharray="4 3" marker-start="url(#g3)" marker-end="url(#g3)"/>
+  <text x="736" y="102" font-size="9" fill="#999">if chosen</text>
+
+  <!-- ===== left: company systems ===== -->
+  <rect x="25" y="146" width="190" height="44" rx="4" fill="none" stroke="#1d1d1b"/>
+  <text x="120" y="164" font-size="11" text-anchor="middle" font-weight="600">Security engineer</text>
+  <text x="120" y="179" font-size="9" text-anchor="middle" fill="#6b6b66">browser · company sign-on</text>
+  <line x1="217" y1="168" x2="260" y2="168" stroke="#1d1d1b" marker-start="url(#s3)" marker-end="url(#s3)"/>
+
+  <rect x="25" y="200" width="190" height="40" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="120" y="216" font-size="11" text-anchor="middle" font-weight="600">Dependency inventory</text>
+  <text x="120" y="230" font-size="9" text-anchor="middle" fill="#6b6b66">SBOMs: which repos use the library</text>
+  <line x1="217" y1="220" x2="260" y2="220" stroke="#1d1d1b" marker-start="url(#s3)"/>
+
+  <rect x="25" y="248" width="190" height="46" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="120" y="264" font-size="11" text-anchor="middle" font-weight="600">Git host</text>
+  <text x="120" y="277" font-size="9" text-anchor="middle" fill="#6b6b66">GitHub Enterprise · GitLab</text>
+  <text x="120" y="289" font-size="9" text-anchor="middle" fill="#6b6b66">read-only clone · draft pull requests</text>
+  <line x1="217" y1="256" x2="260" y2="256" stroke="#1d1d1b" marker-start="url(#s3)" marker-end="url(#s3)"/>
+
+  <rect x="25" y="302" width="190" height="46" rx="4" fill="#b5651d" fill-opacity="0.07" stroke="#b5651d"/>
+  <text x="120" y="318" font-size="11" text-anchor="middle" font-weight="600" fill="#b5651d">Evidence store</text>
+  <text x="120" y="331" font-size="9" text-anchor="middle" fill="#6b6b66">object storage · versioned · locked</text>
+  <text x="120" y="343" font-size="9" text-anchor="middle" fill="#6b6b66">encrypted with your keys</text>
+  <line x1="260" y1="310" x2="217" y2="310" stroke="#b5651d" stroke-width="1.6" marker-end="url(#o3)"/>
+
+  <!-- ===== middle: control namespace ===== -->
+  <rect x="250" y="120" width="290" height="210" rx="5" fill="none" stroke="#1d1d1b"/>
+  <text x="262" y="136" font-size="10" font-weight="600">namespace · control</text>
+
+  <rect x="262" y="146" width="136" height="44" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="330" y="164" font-size="11" text-anchor="middle">Web · API</text>
+  <text x="330" y="179" font-size="9" text-anchor="middle" fill="#6b6b66">sign-on · roles · grid</text>
+
+  <rect x="410" y="146" width="118" height="44" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="469" y="164" font-size="11" text-anchor="middle">Feed watcher</text>
+  <text x="469" y="179" font-size="9" text-anchor="middle" fill="#6b6b66">every new advisory</text>
+
+  <line x1="330" y1="190" x2="330" y2="202" stroke="#1d1d1b" marker-end="url(#s3)"/>
+  <line x1="469" y1="190" x2="469" y2="202" stroke="#1d1d1b" marker-end="url(#s3)"/>
+
+  <rect x="262" y="204" width="266" height="58" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="395" y="221" font-size="12" text-anchor="middle" font-weight="600">Orchestrator</text>
+  <text x="395" y="236" font-size="9" text-anchor="middle" fill="#6b6b66">inventory filter → fan out → gate → report</text>
+  <text x="395" y="250" font-size="9" text-anchor="middle" fill="#6b6b66">one run per advisory · resumes after a crash</text>
+
+  <line x1="330" y1="262" x2="330" y2="272" stroke="#1d1d1b" marker-end="url(#s3)"/>
+  <line x1="469" y1="262" x2="469" y2="272" stroke="#1d1d1b" marker-end="url(#s3)"/>
+
+  <rect x="262" y="274" width="136" height="44" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="330" y="292" font-size="11" text-anchor="middle">Report drafts</text>
+  <text x="330" y="307" font-size="9" text-anchor="middle" fill="#6b6b66">24 h · 72 h · 14 days</text>
+
+  <rect x="410" y="274" width="118" height="44" rx="4" fill="#7a4b8c" fill-opacity="0.08" stroke="#7a4b8c"/>
+  <text x="469" y="292" font-size="11" text-anchor="middle">Workflows</text>
+  <text x="469" y="307" font-size="9" text-anchor="middle" fill="#6b6b66">durable runs · signals</text>
+
+  <!-- queue → agent jobs -->
+  <line x1="469" y1="318" x2="469" y2="378" stroke="#7a4b8c" stroke-width="2" marker-start="url(#p3)" marker-end="url(#p3)"/>
+  <text x="475" y="344" font-size="9" fill="#7a4b8c">job · result</text>
+
+  <!-- ===== middle: agents namespace ===== -->
+  <rect x="250" y="350" width="290" height="240" rx="5" fill="none" stroke="#2f6b3a"/>
+  <text x="262" y="366" font-size="10" font-weight="600" fill="#2f6b3a">namespace · agents</text>
+
+  <rect x="274" y="392" width="256" height="182" rx="5" fill="#fffdf8" stroke="#2f6b3a" stroke-opacity="0.4"/>
+  <rect x="268" y="386" width="256" height="182" rx="5" fill="#fffdf8" stroke="#2f6b3a" stroke-opacity="0.6"/>
+  <rect x="262" y="380" width="256" height="182" rx="5" fill="#fffdf8" stroke="#2f6b3a"/>
+  <text x="274" y="397" font-size="10" font-weight="600" fill="#2f6b3a">agent job · one repo</text>
+  <text x="506" y="397" font-size="8" text-anchor="end" fill="#6b6b66">×N, as GPUs allow</text>
+
+  <rect x="274" y="406" width="232" height="34" rx="4" fill="#1f5f8b" fill-opacity="0.1" stroke="#1f5f8b"/>
+  <text x="390" y="420" font-size="10" text-anchor="middle">gVisor or Firecracker sandbox</text>
+  <text x="390" y="433" font-size="8" text-anchor="middle" fill="#6b6b66">short-lived · deleted after the run</text>
+
+  <rect x="274" y="446" width="232" height="34" rx="4" fill="#2f6b3a" fill-opacity="0.1" stroke="#2f6b3a"/>
+  <text x="390" y="460" font-size="10" text-anchor="middle">Vibe headless · api_base = gateway</text>
+  <text x="390" y="473" font-size="8" text-anchor="middle" fill="#6b6b66">build image for the repo's language</text>
+
+  <rect x="274" y="486" width="232" height="34" rx="4" fill="#b5651d" fill-opacity="0.07" stroke="#b5651d"/>
+  <text x="390" y="500" font-size="10" text-anchor="middle">work copy snapshot</text>
+  <text x="390" y="513" font-size="8" text-anchor="middle" fill="#6b6b66">cloned by the orchestrator · no git credentials</text>
+
+  <text x="274" y="538" font-size="9" fill="#6b6b66">no internet · no cluster credentials</text>
+  <text x="274" y="551" font-size="9" fill="#6b6b66">reaches only the gateway and the mirror</text>
+
+  <!-- ===== right: model and packages ===== -->
+  <!-- chat API bus: agents and orchestrator → gateway -->
+  <polyline points="532,420 566,420 566,150 573,150" fill="none" stroke="#1d1d1b" stroke-width="1.6" marker-end="url(#k3)"/>
+  <line x1="528" y1="214" x2="566" y2="214" stroke="#1d1d1b" stroke-width="1.2"/>
+  <circle cx="566" cy="214" r="2.2" fill="#1d1d1b"/>
+  <text x="534" y="414" font-size="8" fill="#6b6b66">chat API</text>
+
+  <rect x="575" y="120" width="200" height="60" rx="4" fill="#f3f0e8" stroke="#1d1d1b"/>
+  <text x="675" y="138" font-size="12" text-anchor="middle" font-weight="600">Model gateway</text>
+  <text x="675" y="153" font-size="9" text-anchor="middle" fill="#6b6b66">holds credentials · one address</text>
+  <text x="675" y="166" font-size="9" text-anchor="middle" fill="#6b6b66">budget per run · logs every call</text>
+
+  <line x1="660" y1="180" x2="660" y2="208" stroke="#1d1d1b" stroke-width="1.6" marker-end="url(#k3)"/>
+  <text x="654" y="198" font-size="9" text-anchor="end" fill="#6b6b66">option 1</text>
+  <line x1="760" y1="180" x2="760" y2="314" stroke="#999" stroke-dasharray="4 3" marker-end="url(#g3)"/>
+
+  <rect x="575" y="210" width="170" height="92" rx="4" fill="#2f6b3a" fill-opacity="0.08" stroke="#2f6b3a"/>
+  <text x="660" y="227" font-size="11" text-anchor="middle" font-weight="600" fill="#2f6b3a">GPU node pool · option 1</text>
+  <text x="660" y="243" font-size="9" text-anchor="middle" fill="#6b6b66">Large 4 on vLLM or SGLang</text>
+  <text x="660" y="256" font-size="9" text-anchor="middle" fill="#6b6b66">≈1 TB of weights at 8-bit</text>
+  <text x="660" y="269" font-size="9" text-anchor="middle" fill="#6b6b66">one 8×H200 or 8×B200 server</text>
+  <text x="660" y="282" font-size="9" text-anchor="middle" fill="#6b6b66">kept warm · batches many agents</text>
+  <text x="660" y="295" font-size="8" text-anchor="middle" fill="#999">sizing is our estimate</text>
+
+  <rect x="575" y="316" width="200" height="44" rx="4" fill="none" stroke="#999" stroke-dasharray="4 3"/>
+  <text x="675" y="334" font-size="11" text-anchor="middle" font-weight="600" fill="#6b6b66">Managed endpoint · option 2</text>
+  <text x="675" y="349" font-size="9" text-anchor="middle" fill="#999">in your account and region</text>
+
+  <line x1="532" y1="455" x2="573" y2="455" stroke="#b5651d" stroke-width="1.6" marker-end="url(#o3)"/>
+  <rect x="575" y="430" width="200" height="50" rx="4" fill="#b5651d" fill-opacity="0.07" stroke="#b5651d"/>
+  <text x="675" y="447" font-size="11" text-anchor="middle" font-weight="600" fill="#b5651d">Package mirror</text>
+  <text x="675" y="461" font-size="9" text-anchor="middle" fill="#6b6b66">Artifactory · Nexus · internal PyPI</text>
+  <text x="675" y="474" font-size="9" text-anchor="middle" fill="#6b6b66">replaces the demo's wheelhouse</text>
+
+  <!-- legend -->
+  <line x1="29" y1="566" x2="49" y2="566" stroke="#1d1d1b" stroke-width="1.6"/>
+  <text x="55" y="569" font-size="9" fill="#6b6b66">chat API / call</text>
+  <line x1="29" y1="582" x2="49" y2="582" stroke="#7a4b8c" stroke-width="2"/>
+  <text x="55" y="585" font-size="9" fill="#6b6b66">job · result</text>
+  <line x1="29" y1="598" x2="49" y2="598" stroke="#b5651d" stroke-width="1.6"/>
+  <text x="55" y="601" font-size="9" fill="#6b6b66">packages · evidence</text>
+  <line x1="130" y1="566" x2="150" y2="566" stroke="#999" stroke-dasharray="4 3"/>
+  <text x="156" y="569" font-size="9" fill="#6b6b66">optional</text>
+  <line x1="130" y1="582" x2="150" y2="582" stroke="#999"/>
+  <text x="156" y="585" font-size="9" fill="#6b6b66">crosses out</text>
+</svg>
+<figcaption>The same system run by an enterprise on its own infrastructure, whether owned or rented from a cloud
+provider. Only three things cross the boundary: new advisories come in through allow-listed egress, model calls go
+out only if the company chooses Mistral's API, and the early warning leaves only when a person submits it. The feed
+watcher starts a run for every new advisory, so when one is reported as actively exploited the answer often already
+exists. The orchestrator uses the dependency inventory to pick only the repositories that include the library, clones
+them itself with read-only credentials, and starts one job per repository. Durable runs, retries and the pause for approval come from Mistral Workflows.
+Mistral's docs say enterprise customers can run Studio in a private cloud or on-premises, which should keep the
+Workflows coordinator inside the boundary too; we have not tested that. Each job runs in a gVisor or Firecracker
+sandbox that replaces <code>sandbox-exec</code>. Because the whole container is the sandbox, the file tools are
+covered too and the path hook is not needed. The job holds no credentials of any kind and can reach only two places:
+the package mirror, and the model gateway, which sets Vibe's <code>api_base</code>. Behind that gateway the company
+picks one of three models without changing anything else. Option 1 runs Large 4 on its own GPUs with vLLM or SGLang,
+which Mistral names for self-hosting. Mistral gives no hardware figures. The 1 TB and the server size are our
+arithmetic from the 1-trillion-parameter count, so check the model card before quoting them. Option 2 is a managed
+endpoint inside the company's account. Option 3 is Mistral's API. The open weights are under the Mistral Ecosystem
+Open-Weight licence, a modified MIT licence that is free for commercial use. The exception is a business offering the
+model as a service, which needs a separate licence from Mistral. A company running this tool for itself is covered;
+we would need that licence only if we hosted the model for customers. Verdicts, proofs and every report draft go to an
+evidence store the company cannot silently change, because the 72-hour and 14-day reports and any audit rely on
+them. Fixes go out as draft pull requests on the company's own git host, after the gate.</figcaption>
+</figure>
+
+<h2>Not decided or not tested yet</h2>
+<ul>
+  <li><strong>How many agents at once.</strong> Three ran in parallel with no rate-limit errors. Ten has not been tried.</li>
+  <li><strong>The path hook.</strong> It must block file-tool writes outside <code>src/</code> and reads of <code>.env</code> and <code>secrets/</code>. Until it exists, the sandbox only covers the shell.</li>
+  <li><strong>A crash during a Vibe run.</strong> A run did resume after we killed the worker, but only after the activity's timeout. Whether the heartbeat shortens that is untested.</li>
+  <li><strong>The gate as code.</strong> Its checks were run by hand so far.</li>
+  <li><strong>Mistral Agents for the advisory reader.</strong> The Agents SDK could return the advisory facts as a typed result. Not tried.</li>
+  <li><strong>Vibe version.</strong> The hooks were only tested on 3.1.3. Stay on it unless 3.1.4 is tested first.</li>
+  <li><strong>Which real open-source project joins the fleet,</strong> and who checks by hand that its flaw triggers.</li>
+</ul>
+</main>
+</body>
+</html>
