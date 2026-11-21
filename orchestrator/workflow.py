@@ -308,6 +308,12 @@ if os.environ.get("DEPLOYMENT_NAME"):
         """File I/O activity: update run.json status"""
         return _set_status(run_id, status)
 
+    @activity(start_to_close_timeout=timedelta(seconds=30),
+              retry_policy_max_attempts=1)
+    async def list_repos_activity() -> list:
+        """Activity to list repos (file I/O + env access)"""
+        return list_repos()
+
     @activity(start_to_close_timeout=timedelta(seconds=900),
               heartbeat_timeout=timedelta(seconds=60),
               retry_policy_max_attempts=1)
@@ -343,12 +349,12 @@ if os.environ.get("DEPLOYMENT_NAME"):
         async def run(self, advisory_text: str) -> dict:
             run_id = get_execution_id() or uuid.uuid4().hex[:12]
             
-            # File I/O moved to activities (Temporal sandbox safe)
+            # File I/O and env access moved to activities (Temporal sandbox safe)
             await intake_activity(run_id, advisory_text)
             await set_status_activity(run_id, "RUNNING")
             
             advisory = await read_advisory_activity(advisory_text, run_id)
-            repos = list_repos()
+            repos = await list_repos_activity()
             # triage: one activity per repo, all in parallel, one attempt each
             verdicts = list(await asyncio.gather(*[
                 triage_repo_activity(run_id, r) for r in repos
