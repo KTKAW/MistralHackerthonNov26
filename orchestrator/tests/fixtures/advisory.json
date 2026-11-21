@@ -1,6 +1,7 @@
 {
-  "id": "CVE-2026-96760",
+  "advisory_id": "CVE-2026-96760",
   "package": "authlib",
-  "affected_range": "<1.9.0",
+  "affected_version_range": "<1.9.0",
+  "fixed_version": "1.9.0",
   "flawed_function": "authlib.jose.JsonWebSignature.deserialize_json"
 }

@@ -83,9 +83,12 @@ async def test_run_fans_out_pauses_and_completes_on_approve(temporal, small_flee
     assert result["counts"] == {"affected_fixed": 2, "not_affected": 1}
     assert steps.read_state(run_id)["stage"] == "approved"
 
-    verdicts = {repo: json.loads((config.run_dir(run_id) / repo / "verdict.json").read_text()) for repo in ("auth-gateway", "billing-api", "session-service")}
-    assert all(v["gate"]["passed"] for v in verdicts.values())
+    states = {repo: json.loads((config.run_dir(run_id) / repo / "state.json").read_text()) for repo in ("auth-gateway", "billing-api", "session-service")}
+    assert all(s["status"] == "final" and all(rule["passed"] for rule in s["gate"]) for s in states.values())
+    assert [states[repo]["verdict"] for repo in ("auth-gateway", "billing-api", "session-service")] == ["affected_fixed", "affected_fixed", "not_affected"]
     assert (config.run_dir(run_id) / "early-warning.md").is_file()
+    record = json.loads((config.run_dir(run_id) / "run.json").read_text())
+    assert record["workflow_run_id"] == run_id and record["approved_at"] and record["expired_at"] is None
 
     # A draft pull request for each verified fix, and only for those: the workflow ran that step for two repositories.
     assert sorted(proposed) == ["auth-gateway", "billing-api"]
@@ -99,6 +102,8 @@ async def test_run_expires_after_24_hours_without_approval(temporal, small_fleet
     result = _unwrap(await handle.result())  # the test server skips the 24 hours
     assert result["outcome"] == "expired"
     assert steps.read_state(run_id)["stage"] == "expired"
+    record = json.loads((config.run_dir(run_id) / "run.json").read_text())
+    assert record["expired_at"] and record["approved_at"] is None
 
 
 async def test_failed_worker_becomes_needs_human_not_a_failed_run(temporal, small_fleet, run_id, monkeypatch):
@@ -109,9 +114,14 @@ async def test_failed_worker_becomes_needs_human_not_a_failed_run(temporal, smal
     await handle.signal("approve", {"approved_by": "a person"})
     result = _unwrap(await handle.result())
     assert result["counts"] == {"needs_human": 2, "not_affected": 1}
-    bogus = json.loads((config.run_dir(run_id) / "billing-api" / "verdict.json").read_text())
-    assert bogus["gate"]["original_verdict"] == "affected_fixed" and bogus["verdict"] == "needs_human"
-    assert bogus["gate"]["rules"]["proof_fails_on_vulnerable"]["passed"] is False
+    bogus = json.loads((config.run_dir(run_id) / "billing-api" / "state.json").read_text())
+    assert bogus["verdict"] == "needs_human" and json.loads((config.run_dir(run_id) / "billing-api" / "verdict.json").read_text())["verdict"] == "affected_fixed"
+    assert {rule["rule"]: rule["passed"] for rule in bogus["gate"]}["proof_fails_on_vulnerable"] is False
+    # The worker that crashed left no verdict. The orchestrator wrote that repository's state itself.
+    crashed = json.loads((config.run_dir(run_id) / "auth-gateway" / "state.json").read_text())
+    assert crashed["status"] == "final" and crashed["verdict"] == "needs_human"
+    assert [rule["rule"] for rule in crashed["gate"] if not rule["passed"]] == ["worker_finished"]
+    assert not (config.run_dir(run_id) / "auth-gateway" / "verdict.json").exists()
 
 
 async def test_a_lost_worker_is_named_without_repeating_any_error_text():

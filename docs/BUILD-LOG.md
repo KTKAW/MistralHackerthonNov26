@@ -397,3 +397,150 @@ which an agent never sees.
   exploitation" for a person to fill in.
 - The early warning itself needs little: Article 14(2)(a) asks for the Member States where the
   product is available. The draft also carries notes for the 72-hour notification.
+
+### Moved to the design's run contract (21 November)
+
+The design branch pinned a run contract after this build was written: `docs/contract.md`, with
+its schemas and helpers in `src/vulnerability_agent/` (three commits from `dev-matteo`, brought
+over unchanged). This build now writes that contract. The old `schema/verdict.schema.json` and
+its two examples are gone.
+
+What a run leaves on disk now:
+
+| File | Owner | Was |
+|---|---|---|
+| `run.json` | orchestrator | Held the page's working state. It is now the contract's record only: clock start, workflow run id, fleet, approved-at, expired-at |
+| `orchestrator.json` | orchestrator | New. The working state the page polls (stage, counts, advisory text). Not part of the contract |
+| `advisory.json` | orchestrator | Four facts under other names, plus where they came from. Now the contract's five facts and nothing else: the fixed version is new |
+| `advisory.source.json` | orchestrator | New. Model or file, and any OSV record that was read |
+| `<repo>/verdict.json` | worker | Was rewritten by the gate. Now agent-owned fields only, and never touched after the worker wrote it |
+| `<repo>/state.json` | orchestrator | New. The final verdict, each gate rule's result, usage, and the saved proof output. The page and the report read the verdict from here |
+| `<repo>/proof/` | worker | New. Proof tests used to be new test files inside the work copy |
+| `<repo>/fix.diff` | orchestrator | New. `src/` against the fleet copy, computed by the gate |
+| `<repo>/gate/` | gate | Each baseline now has the layout of a repo-run root: `src/`, `proof/`, `venv/` |
+
+What changed in behaviour:
+
+1. **The gate's rules follow the spec.** `no_test_pass_to_fail_between_baselines` replaces "the
+   suite passes" and "no test disappeared": the repository's own tests run on both baselines and
+   are compared test by test. `cited_path_exists` checks every cited file and line of a "not
+   affected" verdict, not only that a path is cited. `installed_library_matches_wheelhouse`
+   compares the worker's own `venv/` with the wheel, file for file, when the worker left one.
+   `proof_in_proof_folder` refuses a proof that sits inside the work copy.
+2. **A proof says what it expects.** Each proof entry carries `on_vulnerable` and `on_fixed`. The
+   gate requires the outcome it measured and the claim to agree.
+3. **A worker that did not finish is not believed.** If the activity failed or timed out, the
+   gate writes a "needs a human" state itself and reads nothing the worker left, even a
+   `verdict.json` that a process outliving its activity wrote later.
+4. **Every rule in `state.json` decides the verdict.** Checks that were recorded and not
+   enforced (the wording of a "not affected" reason, an application change without a claimed
+   fix, the proof on the fixed version for "affected and proven") now go to the event log only.
+5. **At most ten repositories at a time**, the design's default. `LE_CHONK_MAX_PARALLEL` changes it.
+   The workflow takes the number from the intake step, so a replay decides the same way.
+6. **The fixed version comes from the advisory.** The reader asks for it and requires it to be
+   in the advisory's own text, like the identifier, the package and the function. The gate uses
+   it where it used to pick the newest wheel outside the affected range.
+7. **A pull request carries `fix.diff` and nothing else.** The proof test lives outside the work
+   copy, so it stays with the run. The version in the title is read from the work copy's
+   `requirements.txt`, not from the worker's description of its fix.
+8. **The stand-in writes the same layout**, with its verdict checked against the contract's
+   schema before it is written. It no longer has built-in advisory facts: without the run's
+   `advisory.json` it stops.
+
+Checked: 121 tests pass, among them the contract's own 24. A run in the browser on the plain
+fallback with the stand-in and the eleven-app fleet ended with eleven tiles (2 fixed, 7 with no
+reachable path found, 2 for a person), the clock, and links to the cited lines on GitHub.
+
+Not checked: a run on Mistral's hosted Workflows with this contract (no key on the machine this
+was written on), whether the live model returns the fixed version for a pasted advisory, and a
+real agent.
+
+Not done from the spec: replay of a saved run from `fixtures/`, and killing orphaned Vibe
+processes when a worker dies.
+
+### The per-repository agent, built from the design (21 November)
+
+`worker/` and `sandbox/` are new on this branch. They were written from the design branch's
+tickets 03 and 06 and the run contract, not ported from `build/base`. `docs/AGENT.md` has the
+details: setup, the hook protocol with its source files in Vibe 3.1.3, every Vibe tool and how
+it is handled, and what the sandbox allows.
+
+| File | What it is |
+|---|---|
+| `worker/run_repo.py` | One headless Vibe on a fresh copy of one repository, in the contract's layout: `src/`, `proof/`, `venv/` |
+| `worker/prompt.md` | What the agent is told: the three rules, the six stages, the exact shape of `verdict.json` |
+| `worker/setup_vibe_home.py` | Builds `vibe-home/`: Vibe 3.1.3 in its own environment, both hooks, four tools. Never touches a key |
+| `worker/vibe_child.py` | Stops Vibe if the worker process dies, so no agent is orphaned |
+| `sandbox/douane`, `sandbox/profile.sb.template` | The wrapper and its Seatbelt rules: no network, writes only in the run folder, no file contents from home folders or shared temp folders |
+| `sandbox/sandbox2.py`, `sandbox/path_hook.py` | The two strict Vibe hooks: shell commands through the wrapper; file tools limited to `src/`, `proof/` and `verdict.json` |
+
+Where it departs from the design page, and why:
+
+1. **No `--trust`.** With it, a `.vibe/hooks.toml` in the work folder replaced the home's hook of
+   the same name, and an `AGENTS.md` from the repository reached the model. Tried with the real
+   Vibe 3.1.3. The worker also refuses to start if the Vibe home trusts the run folder.
+2. **Four tools by name**, not two web tools switched off. Vibe 3.1.3 still offers
+   `run_typescript`, `search_tool_functions` and `skill` after that. Tool calls made from a
+   `run_typescript` program go through the hooks like any other, and the path hook refuses every
+   tool it has no rule for.
+3. **The working directory is the repo-run root**, not `src/`, because the contract puts
+   `proof/` and `verdict.json` beside `src/`.
+4. **Reads are limited too.** The design blocks `.env`, `secrets/`, the answer key and other
+   repositories' run folders. This profile takes away file contents under home folders,
+   `/private/tmp`, `/private/var/folders` and `/Volumes`, except the run folder, the wheelhouse
+   and the Python install. A narrow allow-list of reads aborts the child on macOS 26.5, so names
+   and attributes stay readable everywhere.
+5. **The prompt adds two things**: write `verdict.json` as soon as the verdict is decided, and a
+   flaw that needs a setting which is off by default is "needs a human".
+
+Checked, all without a model:
+
+- **65 tests for the sandbox and the worker.** Through the real `sandbox-exec`: no network, no
+  write outside the run folder or to `/tmp`, no read of `.env`, `secrets/`, the Vibe home or a
+  denied path, a clean environment, an offline install from the wheelhouse, and the contract's
+  pinned `venv/bin/python -m pytest proof/ -q`.
+- **The real Vibe 3.1.3 with a scripted model**: every shell command it started went through the
+  wrapper, including one started from a `run_typescript` program; refused file-tool calls stayed
+  refused; a planted `AGENTS.md` and `.vibe/hooks.toml` were not picked up.
+- **Worker, sandbox and gate together** (`orchestrator/tests/test_real_worker.py`): with a
+  scripted program in place of `vibe`, a fix from the real worker passed the gate with the gate's
+  own test runs under `sandbox-exec` and no waiver, and the worker's `venv/` passed the gate's
+  library check. A worker that edited its installed library went to a person on that rule alone.
+- **191 tests pass in all.**
+
+When this section was written no model had run: there was no Mistral key on the machine. One
+real agent ran later the same day. See "One real agent" below.
+
+To run one real agent by hand, with a key in the environment. `runs/<run id>/advisory.json` must
+hold the five facts first; starting a run from the page writes it.
+
+```sh
+uv run python -m worker.setup_vibe_home
+uv run python -m worker.run_repo <run id> <repository> --fleet-root runs/_fleet
+```
+
+### One real agent (21 November, evening)
+
+One run, one repository, with a Mistral key in the process's environment for that run only.
+Nothing was stood in: the live model read the advisory, a real Vibe agent worked in the sandbox,
+and the gate re-ran its claim with no waiver.
+
+| Step | What happened |
+|---|---|
+| Advisory | `CVE-2026-96760` typed alone. Looked up at OSV, then one call to `mistral-large-4-0`: 28.0 s. It returned all five facts, the fixed version `1.9.0` among them |
+| Agent | `billing-api`, the app with the hidden route. 133 s, 22 steps, 417,802 tokens, $0.06. Exit code 0, a valid `verdict.json` |
+| Sandbox | 18 shell commands, all 18 through `sandbox/douane`. 5 file-tool calls, all inside `src/`, `proof/` and `verdict.json`. No call was refused |
+| Verdict | `affected_fixed`. Path cited: `app.py:83` (the route depends on `current_customer`), `security.py:52`, `security.py:45` (`verify_bearer` calls `deserialize`), then `jws.py:255` and `jws.py:170` in the installed library |
+| Proof | `proof/test_cve_2026_96760.py`: a token with an empty `signatures` list sent to `POST /charge` must get a 401 |
+| Fix | The pin in `src/requirements.txt` changed from `authlib==1.8.0` to `authlib==1.9.0`. Nothing else in `src/` changed |
+| Gate | 8.8 s, twelve rules, all passed, with its test runs under `sandbox-exec`. The proof exited 1 on the vulnerable baseline and 0 on the fixed one. 9 passed / 0 failed on both baselines. The worker's `venv/` matched the 1.9.0 wheel |
+
+The verdict and the route agree with the answer kept with the tests for this app. The agent
+could not read that answer: the sandbox and the path hook deny it.
+
+The agent wrote its verdict 60 s in, before fixing, as the prompt asks, and updated it twice.
+It also reported three other findings as follow-ups. Nobody has checked those.
+
+Still not checked: the other ten apps, a "not affected" verdict from a real agent (the design
+notes it as the slowest case), a case that should go to a person, ten agents at once, and a run
+on Mistral's hosted Workflows with this contract.

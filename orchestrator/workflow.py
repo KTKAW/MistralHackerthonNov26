@@ -2,7 +2,7 @@
 
     intake (the 24-hour clock starts)
     -> read advisory (exactly one model call)
-    -> for every repository at once: triage (one agent, one attempt) then the gate
+    -> for every repository, at most ten at a time: triage (one agent, one attempt) then the gate
     -> report (a draft, from gated verdicts only)
     -> wait for a person's "approve" signal, for at most 24 hours
 
@@ -135,6 +135,7 @@ class LeChonkRun:
         self._repos = 0
         self._gated = 0
         self._pull_requests = False
+        self._slots: asyncio.Semaphore | None = None
 
     @workflow.signal(name="approve", description="A person approves the drafted early warning. Ignored until the draft exists.")
     async def approve(self, approved_by: str = "") -> None:
@@ -152,6 +153,7 @@ class LeChonkRun:
         meta = await intake(run_id, advisory_text, workflow.now().isoformat())
         self._repos = len(meta["repos"])
         self._pull_requests = bool(meta.get("pull_requests"))  # absent in runs started before this step existed
+        self._slots = asyncio.Semaphore(max(1, int(meta.get("max_parallel") or 10)))  # the cap on repositories in flight
 
         self._stage = "reading_advisory"
         await read_advisory(run_id, advisory_text)
@@ -174,23 +176,17 @@ class LeChonkRun:
 
     async def _one_repo(self, run_id: str, repo: str) -> dict:
         """Triage, then the gate. A triage that fails or times out becomes "needs_human", not a failed run."""
-        try:
-            result = await triage_repo(run_id, repo)
-        except Exception as error:
-            result = {
-                "repo": repo, "rc": -1, "usage": {},
-                "verdict": {
-                    "repo": repo, "verdict": "needs_human",
-                    "advisory": {"id": "", "package": "", "affected_range": "", "flawed_function": ""},
-                    "reason": f"The worker's activity did not finish: {_why(error)}"[:300],
-                    "path": [], "proof": [], "fix": None, "suite": {}, "follow_ups": [],
-                },
-            }
-        gated = await verify_repo(run_id, result)
-        self._gated += 1
-        if self._pull_requests and steps.wants_pull_request(gated):
-            gated = await open_pull_request(run_id, gated)
-        return gated
+        async with self._slots:
+            try:
+                result = await triage_repo(run_id, repo)
+            except Exception as error:
+                # Nothing the worker left is trusted then: the gate writes the "needs_human" state itself.
+                result = {"repo": repo, "rc": -1, "usage": {}, "problem": f"The worker's activity did not finish: {_why(error)}"[:300]}
+            gated = await verify_repo(run_id, result)
+            self._gated += 1
+            if self._pull_requests and steps.wants_pull_request(gated):
+                gated = await open_pull_request(run_id, gated)
+            return gated
 
 
 def _why(error: BaseException) -> str:

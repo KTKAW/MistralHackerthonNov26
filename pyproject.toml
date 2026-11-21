@@ -20,6 +20,7 @@ dev = ["pytest", "pytest-asyncio"]
 exclude-newer = "2026-11-20T00:00:00Z"
 
 [tool.pytest.ini_options]
-testpaths = ["orchestrator/tests", "web/tests"]
+testpaths = ["tests", "orchestrator/tests", "web/tests"]
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

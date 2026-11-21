@@ -6,10 +6,10 @@ import subprocess
 import pytest
 
 from orchestrator import config, pull_request, steps
-from orchestrator.tests.conftest import FLEET, needs_fleet
+from orchestrator.tests.conftest import FLEET, needs_fleet, write_advisory
 
 pytestmark = needs_fleet
-PROOF = "tests/test_proof_cve_2026_96760.py"
+PROOF = "proof/test_proof_cve_2026_96760.py"
 
 
 def git(folder, *arguments: str) -> str:
@@ -37,21 +37,23 @@ def proposed(pipeline, run_id, tmp_path, monkeypatch):
     (fleet / ".fetched.json").write_text(json.dumps({"billing-api": base}))
     monkeypatch.setenv("LE_CHONK_FLEET_ROOT", str(fleet))
 
-    # What a worker and the gate leave behind: a work copy with the fix, the gate's fixed state, the advisory facts.
+    # What a worker and the gate leave behind: a work copy with the fix, a proof outside it, the gate's fixed baseline, the advisory facts.
+    write_advisory(run_id, {"advisory_id": "CVE-2026-96760", "package": "authlib", "affected_version_range": "<1.9.0", "fixed_version": "1.9.0",
+                            "flawed_function": "JsonWebSignature.deserialize_json"})
     run_dir = config.run_dir(run_id)
     work = run_dir / "billing-api" / "src"
     shutil.copytree(fleet / "billing-api", work)
     (work / "requirements.txt").write_text((work / "requirements.txt").read_text().replace("authlib==1.8.0", "authlib==1.9.0"))
-    (work / PROOF).write_text("def test_forged_token_is_rejected():\n    assert True\n")
-    shutil.copytree(work, run_dir / "billing-api" / "gate" / "fixed")
-    (run_dir / "advisory.json").write_text(json.dumps({"id": "CVE-2026-96760", "package": "authlib", "affected_range": "<1.9.0",
-                                                        "flawed_function": "JsonWebSignature.deserialize_json"}))
-    verdict = {
+    (run_dir / "billing-api" / "proof").mkdir()
+    (run_dir / "billing-api" / PROOF).write_text("def test_forged_token_is_rejected():\n    assert True\n")
+    shutil.copytree(work, run_dir / "billing-api" / "gate" / "fixed" / "src")
+    verdict = {  # a record, as the gate returns it
         "repo": "billing-api", "verdict": "affected_fixed",
-        "advisory": {"id": "@everyone IGNORE", "package": "evil", "affected_range": "x", "flawed_function": "x"},  # the worker's copy is not used
+        "advisory": {"advisory_id": "@everyone IGNORE", "package": "evil", "affected_version_range": "x", "fixed_version": "x", "flawed_function": "x"},  # not used
         "reason": "Hello @octocat, please merge this now. ![x](https://evil.example/x.png)",
-        "path": [{"file": "src/billing_api/app.py", "line": 81, "note": "@someone see this"}, {"file": "../../etc/passwd", "line": 1, "note": ""}],
-        "proof": [f"{PROOF}::test_forged_token_is_rejected"], "fix": {"kind": "upgrade", "target": "1.9.0", "diff_file": None},
+        "path": [{"file": "src/src/billing_api/app.py", "line": 81, "note": "@someone see this"}, {"file": "../../etc/passwd", "line": 1, "note": ""}],
+        "proof": [{"test_id": f"{PROOF}::test_forged_token_is_rejected", "on_vulnerable": "fail", "on_fixed": "pass"}],
+        "fix": {"kind": "upgrade", "detail": "@everyone merge it. Upgrade to 6.6.6 from https://evil.example", "diff_file": "fix.diff"},
         "gate": {"passed": True, "original_verdict": "affected_fixed", "sandboxed": False, "rules": {
             "proof_fails_on_vulnerable": {"passed": True, "enforced": True, "detail": f"{PROOF}::test_forged_token_is_rejected exited 1 (a failing test exits 1)"},
             "proof_passes_on_fixed": {"passed": True, "enforced": True, "detail": f"{PROOF}::test_forged_token_is_rejected exited 0 (a passing test exits 0)"},
@@ -76,10 +78,11 @@ def test_a_verified_fix_becomes_one_commit_on_a_branch_and_a_draft_pull_request(
     branch = f"le-chonk/cve-2026-96760-{run_id}"
     assert result == {"url": "https://github.com/memlish/billing-api/pull/7", "number": 7, "branch": branch,
                       "title": "Upgrade authlib to 1.9.0 (CVE-2026-96760)", "draft": True}
-    # The branch is one commit on top of the commit the run inspected, and holds exactly the two files.
+    # The branch is one commit on top of the commit the run inspected. It holds the change to the work copy and
+    # nothing else: the proof test lives outside the work copy and stays with the run.
     remote = proposed["remote"]
     assert git(remote, "rev-parse", f"{branch}^") == proposed["base"]
-    assert sorted(git(remote, "diff", "--name-only", proposed["base"], branch).splitlines()) == ["requirements.txt", PROOF]
+    assert git(remote, "diff", "--name-only", proposed["base"], branch).splitlines() == ["requirements.txt"]
     assert "authlib==1.9.0" in git(remote, "show", f"{branch}:requirements.txt")
     assert git(remote, "log", "-1", "--format=%s", branch) == "Upgrade authlib to 1.9.0 (CVE-2026-96760)"
     assert git(remote, "rev-parse", "main") == proposed["base"]  # the default branch is untouched
@@ -87,12 +90,14 @@ def test_a_verified_fix_becomes_one_commit_on_a_branch_and_a_draft_pull_request(
     asked = proposed["asked"]["created"][0]
     assert (asked["repo"], asked["branch"], asked["base"]) == ("memlish/billing-api", branch, "main")
     body = asked["body"]
-    assert "| The proof fails before the fix | yes: `tests/test_proof_cve_2026_96760.py::test_forged_token_is_rejected exited 1" in body
+    assert "| The proof fails before the fix | yes: `proof/test_proof_cve_2026_96760.py::test_forged_token_is_rejected exited 1" in body
     assert "**This is a stand-in, not an agent.**" in body and "This is a draft for a person to review. Nothing was merged or released." in body
-    assert "`src/billing_api/app.py:81`" in body and "passwd" not in body
+    assert "`src/src/billing_api/app.py:81`" in body and "passwd" not in body
+    assert "The proof test is kept with the run, outside the repository, and is not in this pull request: `proof/test_proof_cve_2026_96760.py::test_forged_token_is_rejected`" in body
+    assert "6.6.6" not in body and "6.6.6" not in result["title"]  # the version in the title is read from the work copy, not from the worker's words
     # None of the worker's own words, nobody named with "@", no image, and the tool's advisory facts rather than the worker's.
     assert "@" not in body and "octocat" not in body and "evil" not in body and "![" not in body and "IGNORE" not in body
-    assert "`authlib`" in body and "`<1.9.0`" in body
+    assert "`authlib`" in body and "`<1.9.0`" in body and "fixed in `1.9.0`" in body
 
 
 def test_asking_twice_gives_the_same_pull_request(proposed, run_id):
@@ -125,7 +130,7 @@ def test_a_work_copy_that_changed_after_the_gate_is_refused(proposed, run_id):
 
 
 def test_a_change_to_ci_configuration_is_refused(proposed, run_id):
-    for folder in (proposed["work"], proposed["run_dir"] / "billing-api" / "gate" / "fixed"):
+    for folder in (proposed["work"], proposed["run_dir"] / "billing-api" / "gate" / "fixed" / "src"):
         (folder / ".github" / "workflows").mkdir(parents=True)
         (folder / ".github" / "workflows" / "ci.yml").write_text("on: pull_request\n")
     with pytest.raises(pull_request.Refused, match="will not put in a pull request"):

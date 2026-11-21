@@ -1,0 +1,35 @@
+{
+  "verdict": "affected_fixed",
+  "reason": "The checkout endpoint verifies the session cookie with authlib's JsonWebSignature.verify, which accepts a forged signature on Authlib 1.8.0; the same request is rejected on 1.9.0, and the proof test fails on the vulnerable version and passes on the fixed one.",
+  "path": [
+    {
+      "file": "src/payments/routes.py",
+      "line": 42,
+      "note": "POST /checkout verifies the session cookie with the vulnerable function"
+    },
+    {
+      "file": "venv/lib/python3.13/site-packages/authlib/jose/__init__.py",
+      "line": 215,
+      "note": "JsonWebSignature.verify — signature-check bypass in authlib <1.9.0"
+    }
+  ],
+  "proof": [
+    {
+      "test_id": "proof/test_forged_cookie.py::test_forged_cookie_accepted",
+      "on_vulnerable": "fail",
+      "on_fixed": "pass"
+    }
+  ],
+  "fix": {
+    "kind": "upgrade",
+    "detail": "Pin authlib==1.9.0 in src/requirements.txt (the fix.diff computed by the orchestrator is the version-pin change)",
+    "diff_file": "fix.diff"
+  },
+  "suite": {
+    "before": { "passed": 18, "failed": 0 },
+    "after": { "passed": 19, "failed": 0 }
+  },
+  "follow_ups": [
+    "A malformed session cookie crashes the checkout endpoint with a 500 instead of a clean 401."
+  ]
+}

@@ -7,7 +7,11 @@ here, so the workflow code itself stays deterministic.
     intake -> read_advisory -> triage_repo + verify_repo for each repository -> write_report
     -> (wait for a person) -> close_run
 
-runs/<run_id>/run.json is the run's public state. The web grid reads it.
+What a run leaves on disk follows the run contract (docs/contract.md): run.json, advisory.json
+and early-warning.md at the run root, and per repository src/, proof/, verdict.json (the
+worker's), state.json and fix.diff (the orchestrator's). Two files are this orchestrator's own
+and are not part of the contract: orchestrator.json, the working state the page polls (stage,
+counts, the advisory text), and events.jsonl.
 """
 from __future__ import annotations
 
@@ -21,13 +25,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 from orchestrator import advisory as advisory_reader
-from orchestrator import config, events, pull_request
-from orchestrator.gate import gate
+from orchestrator import config, events, pull_request, record
+from orchestrator import gate as gate_checks
 from orchestrator.report import render_early_warning
+from vulnerability_agent import contract
+from vulnerability_agent import runs as contract_runs
 
 _state_lock = threading.Lock()
-VERDICTS = ("not_affected", "affected_proven", "affected_fixed", "needs_human")
+VERDICTS = contract.VERDICTS
 MAX_WORKER_EVENTS = 300  # per repository: a worker cannot flood the log
+STATE_FILE = "orchestrator.json"  # this orchestrator's working state; run.json is the contract's record
 
 
 # ---------------------------------------------------------------- run state
@@ -35,7 +42,7 @@ MAX_WORKER_EVENTS = 300  # per repository: a worker cannot flood the log
 
 def read_state(run_id: str) -> dict:
     try:
-        data = json.loads((config.run_dir(run_id) / "run.json").read_text(encoding="utf-8"))
+        data = json.loads((config.run_dir(run_id) / STATE_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -48,10 +55,32 @@ def update_state(run_id: str, **changes: Any) -> dict:
         state = read_state(run_id)
         state["run_id"] = config.check_name(run_id, "run id")
         state.update(changes)
-        temporary = run_dir / f"run.json.{threading.get_ident()}.tmp"
+        temporary = run_dir / f"{STATE_FILE}.{threading.get_ident()}.tmp"
         temporary.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        os.replace(temporary, run_dir / "run.json")
+        os.replace(temporary, run_dir / STATE_FILE)
     return state
+
+
+def _utc(moment: dt.datetime) -> str:
+    """A time as the contract writes it: UTC, to the second, ending in Z."""
+    return moment.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _fleet_source(repo: str) -> str:
+    """Where a repository's read-only copy is, from the repository root when it is inside it."""
+    source = config.fleet_root() / repo
+    try:
+        return source.resolve().relative_to(config.REPO_ROOT.resolve()).as_posix()
+    except ValueError:
+        return str(source)
+
+
+def _update_run_record(run_id: str, **changes: Any) -> None:
+    """Change fields of the contract's run.json, and check the result against its schema."""
+    path = config.run_dir(run_id) / contract.RUN_JSON
+    document = record.read_json(path)
+    if document is not None:
+        contract_runs.write_run_json(path.parent, {**document, **changes})
 
 
 # ---------------------------------------------------------------- the steps
@@ -66,11 +95,21 @@ def list_repos() -> list[str]:
 
 
 def intake(run_id: str, advisory_text: str, started_at: str) -> dict:
-    """The clock starts here. Returns {run_id, started_at, deadline, repos}."""
+    """The clock starts here. Returns {run_id, started_at, deadline, repos, pull_requests, max_parallel}."""
     started = dt.datetime.fromisoformat(started_at)
     if started.tzinfo is None:
         started = started.replace(tzinfo=dt.timezone.utc)
     repos = list_repos()
+    if repos:  # the contract's record of the run; its schema wants at least one repository
+        contract_runs.write_run_json(config.run_dir(run_id), {
+            "run_id": config.check_name(run_id, "run id"),
+            "clock_start": _utc(started),
+            "workflow_run_id": run_id,  # a run's folder is named after the workflow execution that drives it
+            "paths": {"advisory": contract.ADVISORY_JSON, "early_warning": contract.EARLY_WARNING_MD},
+            "fleet": [{"repo": repo, "source": _fleet_source(repo)} for repo in repos],
+            "approved_at": None,
+            "expired_at": None,
+        })
     state = update_state(
         run_id,
         started_at=started.isoformat(timespec="seconds"),
@@ -82,17 +121,18 @@ def intake(run_id: str, advisory_text: str, started_at: str) -> dict:
         approved_by=None,
         error=None,
         pull_requests=config.pull_requests(),
+        max_parallel=config.max_parallel(),
     )
-    events.emit(run_id, "orchestrator", f"Run started with {len(repos)} repositories in the fleet. The 24-hour clock is running."
+    events.emit(run_id, "orchestrator", f"Run started with {len(repos)} repositories in the fleet, at most {state['max_parallel']} at a time. The 24-hour clock is running."
                 + (" A verified fix will be proposed as a draft pull request." if state["pull_requests"] else ""), kind="start")
-    # The switch is read once, here. The workflow acts on what this returned, so a replay decides the same way.
-    return {key: state[key] for key in ("run_id", "started_at", "deadline", "repos", "pull_requests")}
+    # The switches are read once, here. The workflow acts on what this returned, so a replay decides the same way.
+    return {key: state[key] for key in ("run_id", "started_at", "deadline", "repos", "pull_requests", "max_parallel")}
 
 
 def read_advisory(run_id: str, advisory_text: str) -> dict:
-    """One model call. Stops the run if the answer is not four well-formed facts."""
+    """One model call. Stops the run if the answer is not the contract's five well-formed facts."""
     from_file = bool(os.environ.get("LE_CHONK_ADVISORY_JSON"))
-    events.emit(run_id, "orchestrator", "Reading the advisory: " + ("four facts from a file, no model call." if from_file else f"one call to {config.model()}."))
+    events.emit(run_id, "orchestrator", "Reading the advisory: " + ("five facts from a file, no model call." if from_file else f"one call to {config.model()}."))
     started = time.monotonic()
     try:
         facts = advisory_reader.read_advisory(run_id, advisory_text, lambda text, kind="step": events.emit(run_id, "orchestrator", text, kind=kind))
@@ -102,16 +142,25 @@ def read_advisory(run_id: str, advisory_text: str) -> dict:
         raise
     update_state(run_id, stage="triage", advisory=facts, advisory_lookup=advisory_reader.looked_up(run_id))
     events.emit(run_id, "orchestrator",
-                f"Advisory read in {time.monotonic() - started:.1f} s: {facts['id']} in {facts['package']} {facts['affected_range']}, "
-                f"flawed function {facts['flawed_function']}. One worker per repository starts now.", kind="ok")
+                f"Advisory read in {time.monotonic() - started:.1f} s: {facts['advisory_id']} in {facts['package']} {facts['affected_version_range']}, "
+                f"fixed in {facts['fixed_version']}, flawed function {facts['flawed_function']}. One worker per repository starts now.", kind="ok")
     return facts
 
 
 def triage_repo(run_id: str, repo: str, heartbeat_fn: Callable[..., None] | None = None) -> dict:
-    """Run the per-repository worker once. A worker that fails yields "needs_human", never a crash."""
+    """Run the per-repository worker once. Returns {repo, rc, problem, usage}.
+
+    The worker's verdict is not passed on from here. It is a file, verdict.json, and the gate
+    reads it from disk. `problem` is set when the worker itself failed, and then nothing it left
+    behind is trusted.
+    """
     config.check_name(repo, "repository name")
     started = time.monotonic()
-    rc, verdict, export = -1, None, {}
+    rc, export, problem = -1, {}, None
+    try:
+        gate_checks.write_running_state(run_id, repo)
+    except Exception:
+        pass  # the placeholder is a courtesy; the final state is what counts
     events.emit(run_id, "orchestrator", f"Worker started on a fresh copy of the repository ({config.run_repo_target()}).", repo=repo, kind="start")
     reported = 0
 
@@ -130,30 +179,26 @@ def triage_repo(run_id: str, repo: str, heartbeat_fn: Callable[..., None] | None
         result = worker(run_id, repo, fleet_root=str(config.fleet_root()), runs_root=str(config.runs_root()),
                         vibe_home=str(config.vibe_home()), heartbeat_fn=beat)
         rc = int(result.get("rc", -1))
-        verdict = result.get("verdict")
         export = result.get("export") or {}
-        problem = None if isinstance(verdict, dict) else "the worker returned no verdict"
     except Exception as error:
-        problem = f"the worker failed: {type(error).__name__}: {error}"
+        problem = f"the worker failed: {type(error).__name__}: {error}"[:500]
     seconds = round(time.monotonic() - started, 1)
     if problem:
-        verdict = _needs_human(run_id, repo, problem[:500])
         events.emit(run_id, "orchestrator", f"No verdict after {seconds} s: {problem}", repo=repo, kind="fail")
     else:
-        claim = verdict.get("verdict") if verdict.get("verdict") in VERDICTS else "an unknown verdict"
+        claim = (record.claim(config.run_dir(run_id) / repo) or {}).get("verdict")
+        claim = claim if claim in VERDICTS else "no usable verdict"
         events.emit(run_id, "orchestrator", f"Worker returned after {seconds} s. It claims {claim}. Nothing is shown as a result until the gate has checked it.",
                     repo=repo, kind="ok", claim=claim)
-    verdict["repo"] = repo  # the orchestrator names the repository, not the agent
     usage = _usage(export)
     usage["seconds"] = seconds
-    return {"repo": repo, "rc": rc, "verdict": verdict, "usage": usage}
+    return {"repo": repo, "rc": rc, "problem": problem, "usage": usage}
 
 
 def verify_repo(run_id: str, result: dict) -> dict:
-    """The gate, for one repository. Returns the gated verdict, which is also on disk by then."""
-    verdict = dict(result["verdict"])
-    verdict["usage"] = result.get("usage", {})
-    return gate(run_id, [verdict], runs_root=config.runs_root(), wheelhouse=config.wheelhouse())[0]
+    """The gate, for one repository. It writes state.json and returns the joined record."""
+    return gate_checks.gate_repo(run_id, result["repo"], problem=result.get("problem"), usage=result.get("usage") or {},
+                                 runs_root=config.runs_root(), wheelhouse=config.wheelhouse())
 
 
 def wants_pull_request(gated: dict) -> bool:
@@ -200,8 +245,9 @@ def write_report(run_id: str, gated: list) -> dict:
 def close_run(run_id: str, outcome: str, approved_by: str | None = None) -> dict:
     """`outcome` is "approved" or "expired". Nothing is sent anywhere: a person submits the report."""
     stage = "approved" if outcome == "approved" else "expired"
-    state = update_state(run_id, stage=stage, approved_by=approved_by or None,
-                         closed_at=dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"))
+    closed = dt.datetime.now(dt.timezone.utc)
+    state = update_state(run_id, stage=stage, approved_by=approved_by or None, closed_at=closed.isoformat(timespec="seconds"))
+    _update_run_record(run_id, **{"approved_at" if stage == "approved" else "expired_at": _utc(closed)})
     events.emit(run_id, "orchestrator",
                 ("Approved" + (f" by {approved_by}" if approved_by else "") + ". A person now submits the report. This tool sends nothing.")
                 if stage == "approved" else "Nobody approved within 24 hours. The run is closed as expired.", kind="done")
@@ -214,18 +260,6 @@ def close_run(run_id: str, outcome: str, approved_by: str | None = None) -> dict
 def _load_worker() -> Callable[..., dict]:
     module_name, _, function_name = config.run_repo_target().partition(":")
     return getattr(importlib.import_module(module_name), function_name or "run_repo")
-
-
-def _needs_human(run_id: str, repo: str, reason: str) -> dict:
-    facts = read_state(run_id).get("advisory") or {}
-    return {
-        "repo": repo,
-        "advisory": {key: str(facts.get(key, "")) for key in ("id", "package", "affected_range", "flawed_function")},
-        "verdict": "needs_human",
-        "reason": reason,
-        "path": [], "proof": [], "fix": None,
-        "suite": {}, "follow_ups": [],
-    }
 
 
 def _usage(export: dict) -> dict:

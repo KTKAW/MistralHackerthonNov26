@@ -56,3 +56,18 @@ def small_fleet(tmp_path, monkeypatch, pipeline):
 @pytest.fixture
 def run_id():
     return "test-" + uuid.uuid4().hex[:10]
+
+
+AUTHLIB = {"advisory_id": "CVE-2026-96760", "package": "authlib", "affected_version_range": "<1.9.0", "fixed_version": "1.9.0",
+           "flawed_function": "authlib.jose.JsonWebSignature.deserialize_json"}
+
+
+def write_advisory(run_id: str, advisory: dict | None = None) -> dict:
+    """Put a run's five facts on disk, as the read-advisory step does. Returns them."""
+    from orchestrator import config
+    from vulnerability_agent import runs as contract_runs
+
+    facts = dict(advisory or AUTHLIB)
+    config.run_dir(run_id).mkdir(parents=True, exist_ok=True)
+    contract_runs.write_advisory_json(config.run_dir(run_id), facts)
+    return facts

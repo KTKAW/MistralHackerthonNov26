@@ -1,0 +1,16 @@
+{
+  "run_id": "example-run",
+  "clock_start": "2026-11-21T09:00:00Z",
+  "workflow_run_id": "wf-run-01JEXAMPLE0000",
+  "paths": {
+    "advisory": "advisory.json",
+    "early_warning": "early-warning.md"
+  },
+  "fleet": [
+    { "repo": "payments-svc", "source": "fleet/payments-svc" },
+    { "repo": "catalog-svc", "source": "fleet/catalog-svc" },
+    { "repo": "search-svc", "source": "fleet/search-svc" }
+  ],
+  "approved_at": "2026-11-21T11:42:00Z",
+  "expired_at": null
+}

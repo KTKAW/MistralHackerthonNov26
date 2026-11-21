@@ -38,9 +38,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from orchestrator import config, events, steps
+from orchestrator import config, events, record, steps
 from orchestrator import gate as gate_checks
 from orchestrator import fetch_fleet
+from vulnerability_agent import contract
 from orchestrator.local import LOCAL, new_run_id
 
 CLOSED = ("approved", "expired", "failed")
@@ -192,13 +193,34 @@ def _path(repo: str, steps_cited: object, link: dict | None) -> list[dict]:
             continue
         file, line = str(step.get("file", ""))[:200], step.get("line")
         entry = {"file": file, "line": line if isinstance(line, int) else None, "note": str(step.get("note", ""))[:240], "href": None}
-        if link and entry["line"] and _FILE.match(file) and ".." not in file and (config.fleet_root() / repo / file).is_file():
-            entry["href"] = f"{link['url']}/blob/{link['commit']}/{file}#L{entry['line']}"
+        # A cited file is named from the repo-run root. The repository's own files are the ones under src/.
+        in_repo = file.removeprefix(contract.SRC_DIR + "/") if file.startswith(contract.SRC_DIR + "/") else ""
+        if link and entry["line"] and in_repo and _FILE.match(in_repo) and ".." not in in_repo and (config.fleet_root() / repo / in_repo).is_file():
+            entry["href"] = f"{link['url']}/blob/{link['commit']}/{in_repo}#L{entry['line']}"
         path.append(entry)
     return path[:12]
 
 
+def _advisory_shown(advisory: object) -> dict | None:
+    """The contract's five facts, under the short names the page uses."""
+    if not isinstance(advisory, dict):
+        return None
+    return {"id": advisory.get("advisory_id"), "package": advisory.get("package"), "affected_range": advisory.get("affected_version_range"),
+            "fixed_version": advisory.get("fixed_version"), "flawed_function": advisory.get("flawed_function")}
+
+
+def _fix_shown(run_id: str, repo: str, result: dict) -> dict | None:
+    """The fix for the page. An upgrade's version is read from the work copy by this tool, not taken from the worker's words."""
+    fix = result.get("fix") or {}
+    if fix.get("kind") not in ("upgrade", "patch"):
+        return None
+    package = str((result.get("advisory") or {}).get("package", ""))
+    pinned = gate_checks.pinned_version(_run_dir(run_id) / repo / contract.SRC_DIR / "requirements.txt", package)
+    return {"kind": fix["kind"], "target": pinned or "a version not pinned in requirements.txt", "diff_file": contract.FIX_DIFF}
+
+
 def _tile(run_id: str, repo: str, verdict: dict, link: dict | None = None) -> dict:
+    """A tile from a record (orchestrator/record.py): the verdict is state.json's, never the worker's."""
     gate = verdict.get("gate") or {}
     kind = verdict.get("verdict", "needs_human")
     rejected = gate.get("passed") is False and gate.get("original_verdict") not in (None, "needs_human")
@@ -210,7 +232,7 @@ def _tile(run_id: str, repo: str, verdict: dict, link: dict | None = None) -> di
         "gate": {"passed": gate.get("passed"), "claimed": gate.get("original_verdict"), "failed_rules": failed,
                  "sandboxed": gate.get("sandboxed"), "checked_at": gate.get("checked_at")},
         "usage": verdict.get("usage") or {},
-        "verdict_url": f"/runs/{run_id}/repos/{repo}/verdict.json",
+        "verdict_url": f"/runs/{run_id}/repos/{repo}/state.json",
         "link": link,
         "pull_request": _pull_request(_run_dir(run_id), repo),
     }
@@ -219,8 +241,10 @@ def _tile(run_id: str, repo: str, verdict: dict, link: dict | None = None) -> di
         tile.update(reason=f"The gate rejected a claim of {TITLES.get(gate.get('original_verdict'), gate.get('original_verdict'))}.",
                     path=[], proof=[], fix=None, follow_ups=[])
     else:
-        tile.update(reason=str(verdict.get("reason", ""))[:900], path=_path(repo, verdict.get("path"), link), proof=verdict.get("proof") or [],
-                    fix=verdict.get("fix"), follow_ups=(verdict.get("follow_ups") or [])[:6])
+        tile.update(reason=str(verdict.get("reason", ""))[:900], path=_path(repo, verdict.get("path"), link), proof=record.proof_ids(verdict)[:10],
+                    fix=_fix_shown(run_id, repo, verdict), follow_ups=(verdict.get("follow_ups") or [])[:6])
+        if kind == "not_affected":  # the gate checks that the cited lines exist, and nothing more
+            tile["note"] = "Cited lines exist; reasoning not machine-checked."
     return tile
 
 
@@ -235,17 +259,17 @@ def list_runs() -> dict:
     root = config.runs_root()
     runs = []
     for folder in sorted(root.iterdir(), reverse=True) if root.is_dir() else []:
-        state = _read(folder / "run.json")
+        state = _read(folder / steps.STATE_FILE)
         if state and not folder.name.startswith("_"):
             runs.append({"run_id": folder.name, "stage": state.get("stage"), "started_at": state.get("started_at"),
-                         "advisory": (state.get("advisory") or {}).get("id")})
+                         "advisory": (state.get("advisory") or {}).get("advisory_id")})
     return {"runs": runs[:30]}
 
 
 @app.get("/runs/{run_id}")
 def get_run(run_id: str) -> dict:
     run_dir = _run_dir(run_id)
-    state = _read(run_dir / "run.json")
+    state = _read(run_dir / steps.STATE_FILE)
     if state is None:
         # The run was accepted but its first step has not written anything yet.
         return {"run_id": run_id, "stage": "starting", "status": backend().status(run_id), "tiles": [], "pending": [], "repos_total": 0, "repos": [],
@@ -253,9 +277,9 @@ def get_run(run_id: str) -> dict:
     tiles, pending = [], []
     links = _repo_links()
     for repo in state.get("repos") or []:
-        verdict = _read(run_dir / repo / "verdict.json")
-        if verdict is not None and isinstance(verdict.get("gate"), dict):
-            tiles.append(_tile(run_id, repo, verdict, links.get(repo)))
+        result = record.load(run_dir, repo)  # None until state.json says "final"
+        if result is not None:
+            tiles.append(_tile(run_id, repo, result, links.get(repo)))
         else:
             pending.append(repo)  # the gate has not been through it: no verdict is shown
     counts: dict[str, int] = {}
@@ -263,7 +287,7 @@ def get_run(run_id: str) -> dict:
         counts[tile["verdict"]] = counts.get(tile["verdict"], 0) + 1
     return {
         "run_id": run_id, "stage": state.get("stage"), "status": backend().status(run_id),
-        "started_at": state.get("started_at"), "deadline": state.get("deadline"), "advisory": state.get("advisory"),
+        "started_at": state.get("started_at"), "deadline": state.get("deadline"), "advisory": _advisory_shown(state.get("advisory")),
         "advisory_lookup": [item for item in state.get("advisory_lookup") or [] if isinstance(item, dict)
                             and str(item.get("url", "")).startswith("https://osv.dev/vulnerability/")][:4],
         "repos_total": len(state.get("repos") or []), "tiles": tiles, "pending": pending, "counts": counts,
@@ -282,16 +306,17 @@ def get_report(run_id: str) -> str:
         raise HTTPException(404, "The report has not been drafted yet.") from None
 
 
-@app.get("/runs/{run_id}/repos/{repo}/verdict.json")
-def get_verdict(run_id: str, repo: str) -> JSONResponse:
+@app.get("/runs/{run_id}/repos/{repo}/state.json")
+def get_state(run_id: str, repo: str) -> JSONResponse:
+    """The orchestrator-owned state of one repository, once it is final. This is where the verdict lives."""
     try:
         config.check_name(repo, "repository name")
     except ValueError:
         raise HTTPException(404, "No such repository.") from None
-    verdict = _read(_run_dir(run_id) / repo / "verdict.json")
-    if verdict is None or not isinstance(verdict.get("gate"), dict):
-        raise HTTPException(404, "No gated verdict for this repository yet.")
-    return JSONResponse(verdict)
+    state = _read(_run_dir(run_id) / repo / contract.STATE_JSON)
+    if state is None or state.get("status") != contract.STATE_FINAL:
+        raise HTTPException(404, "No final state for this repository yet.")
+    return JSONResponse(state)
 
 
 @app.get("/runs/{run_id}/events")
@@ -318,7 +343,7 @@ async def stream_events(run_id: str, request: Request, after: int = 0) -> Stream
             if batch:
                 quiet = 0.0
                 continue
-            if (_read(run_dir / "run.json") or {}).get("stage") in CLOSED:
+            if (_read(run_dir / steps.STATE_FILE) or {}).get("stage") in CLOSED:
                 yield "event: end\ndata: {}\n\n"
                 return
             quiet += 0.4
@@ -355,14 +380,13 @@ def get_detail(run_id: str, repo: str) -> dict:
     except ValueError:
         raise HTTPException(404, "No such repository.") from None
     run_dir = _run_dir(run_id)
-    state = _read(run_dir / "run.json") or {}
+    state = _read(run_dir / steps.STATE_FILE) or {}
     if repo not in (state.get("repos") or []):
         raise HTTPException(404, "No such repository in this run.")
     repo_dir = run_dir / repo
     link = _repo_links().get(repo)
-    on_disk = _read(repo_dir / "verdict.json")
-    gated = on_disk if on_disk is not None and isinstance(on_disk.get("gate"), dict) else None
-    claim = _read(repo_dir / "verdict.agent.json") or (on_disk if gated is None else None)
+    gated = record.load(run_dir, repo)  # the final state, joined with the worker's claim
+    claim = record.claim(repo_dir)  # verdict.json exactly as the worker wrote it
 
     gate = (gated or {}).get("gate") or {}
     rules = [{"name": name, "label": gate_checks.RULE_LABELS.get(name, name), "passed": rule.get("passed"),
@@ -371,9 +395,13 @@ def get_detail(run_id: str, repo: str) -> dict:
     rejected = gate.get("passed") is False and gate.get("original_verdict") not in (None, "needs_human")
 
     files, deleted = [], []
+    proof_dir = repo_dir / contract.PROOF_DIR
+    for path in sorted(proof_dir.glob("test_*.py"))[:8] if proof_dir.is_dir() else []:
+        if not path.is_symlink():  # the proof tests the worker wrote, which live outside the work copy
+            files.append({"name": f"{contract.PROOF_DIR}/{path.name}", "change": "added", "text": _file_text(path)})
     changes = gate_checks.work_copy_changes(run_id, repo)
     if changes:
-        original, work = config.fleet_root() / repo, repo_dir / "src"
+        original, work = config.fleet_root() / repo, repo_dir / contract.SRC_DIR
         for name in changes["added"][:8]:
             files.append({"name": name, "change": "added", "text": _file_text(work / name)})
         for name in changes["changed"][:8]:
@@ -397,21 +425,23 @@ def get_detail(run_id: str, repo: str) -> dict:
             "verdict": str(claim.get("verdict", ""))[:40],
             "reason": str(claim.get("reason", ""))[:1500],
             "path": _path(repo, claim.get("path"), link),
-            "proof": [str(test)[:300] for test in (claim.get("proof") or [])][:10] if isinstance(claim.get("proof"), list) else [],
-            "fix": claim.get("fix") if isinstance(claim.get("fix"), dict) else None,
+            "proof": [test[:300] for test in record.proof_ids(claim)][:10] if isinstance(claim.get("proof"), list) else [],
+            "fix": _fix_shown(run_id, repo, {"fix": claim.get("fix"), "advisory": state.get("advisory")}) if isinstance(claim.get("fix"), dict) else None,
             "follow_ups": [str(item)[:300] for item in (claim.get("follow_ups") or [])][:8] if isinstance(claim.get("follow_ups"), list) else [],
         },
         "files": files, "deleted": deleted,
-        "gate_log": _tidy(_file_text(repo_dir / "gate" / "log.txt", 400_000))[-8000:],
+        "gate_log": _tidy(_file_text(repo_dir / contract.GATE_DIR / "log.txt", 400_000))[-8000:],
+        "proof_output": {str(test)[:300]: _tidy(str(text))[-1500:] for test, text in ((gated or {}).get("proof_output") or {}).items()},
+        "fix_diff": _file_text(repo_dir / contract.FIX_DIFF, 12_000),
         "export": _clip(json.dumps(export, indent=2, ensure_ascii=False), 6000) if export is not None else None,
-        "usage": (gated or claim or {}).get("usage") or {},
+        "usage": (gated or {}).get("usage") or {},
         "events": [event for event in events.read(run_id) if event.get("repo") == repo],
     }
 
 
 @app.post("/runs/{run_id}/approve", dependencies=[Depends(json_only)])
 def approve_run(run_id: str, body: Approve) -> dict:
-    state = _read(_run_dir(run_id) / "run.json") or {}
+    state = _read(_run_dir(run_id) / steps.STATE_FILE) or {}
     if state.get("stage") != "awaiting_approval":
         raise HTTPException(409, f"Nothing to approve: the run is at stage {state.get('stage', 'starting')!r}.")
     backend().approve(run_id, body.approved_by.strip())
