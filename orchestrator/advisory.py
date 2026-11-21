@@ -147,7 +147,7 @@ def _canonical(identifier: str) -> str:
 
 def _fetch(identifier: str) -> dict:
     """One OSV record. The identifier has already matched IDENTIFIER, so it is safe in the address."""
-    request = urllib.request.Request(OSV_RECORD + identifier, headers={"Accept": "application/json", "User-Agent": "le-chonk"})
+    request = urllib.request.Request(OSV_RECORD + identifier, headers={"Accept": "application/json", "User-Agent": "chonkdefendor"})
     with urllib.request.urlopen(request, timeout=10) as response:
         record = json.loads(response.read(1_000_000).decode("utf-8"))
     if not isinstance(record, dict) or not isinstance(record.get("id"), str):

@@ -182,7 +182,7 @@ def _body(run_id: str, repo: str, advisory: dict, verdict: dict, app: dict, chan
         "",
         "## How it was produced",
         "",
-        f"- Run {_code(run_id)} of Le Chonk, a tool that checks a fleet of repositories against one security advisory.",
+        f"- Run {_code(run_id)} of ChonkDefendor, a tool that checks a fleet of repositories against one security advisory.",
         f"- Worker: {_code(config.run_repo_target())}." + (" **This is a stand-in, not an agent.** It took this change from an answer file. The checks above are real." if stand_in else ""),
         "- Agent-written tests ran " + ("inside the sandbox." if checked.get("sandboxed") is True else "outside the sandbox."),
         "",
@@ -225,7 +225,7 @@ def _push_branch(app: dict, branch: str, title: str, run_id: str, work: Path, fi
             _run(["git", "-C", str(clone), "rm", "--quiet", "--", *deleted])
         if files:
             _run(["git", "-C", str(clone), "add", "--", *files])
-        message = f"{title}\n\nProposed by Le Chonk, run {run_id}. A gate re-ran the proof on clean copies:\nit fails before this change and passes after it."
+        message = f"{title}\n\nProposed by ChonkDefendor, run {run_id}. A gate re-ran the proof on clean copies:\nit fails before this change and passes after it."
         _run(["git", "-C", str(clone), "commit", "--quiet", "-m", message])
         _run(["git", "-C", str(clone), "push", "--quiet", "origin", f"{branch}:refs/heads/{branch}"])
 

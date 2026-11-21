@@ -123,7 +123,7 @@ ACTIVITIES = [intake, read_advisory, triage_repo, verify_repo, open_pull_request
 
 @workflow.define(
     name=config.WORKFLOW_NAME,
-    workflow_display_name="Le Chonk: 24-hour vulnerability response",
+    workflow_display_name="ChonkDefendor: 24-hour vulnerability response",
     workflow_description="One advisory in. One agent per repository, a gate with no model, and a draft early warning that waits for a person.",
     execution_timeout=timedelta(hours=config.APPROVAL_HOURS + 2),
 )

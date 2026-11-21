@@ -1,4 +1,4 @@
-# 24-hour vulnerability response with Le Chonk
+# ChonkDefendor: 24-hour vulnerability response with Le Chonk
 
 Paste a security advisory. One agent goes into each repository, works out whether an outside caller can reach the flaw, and proves its answer with a test. A gate with no model in it re-runs every proof. A person approves the drafted 24-hour early warning.
 

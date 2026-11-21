@@ -1,4 +1,4 @@
-# 24-hour vulnerability response with Le Chonk
+# ChonkDefendor: 24-hour vulnerability response with Le Chonk
 
 Our project for the "Le Chonk in London" Mistral Vibe hackathon, Saturday 21 November 2026.
 

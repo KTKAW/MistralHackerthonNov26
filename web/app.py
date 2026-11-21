@@ -125,7 +125,7 @@ def make_backend() -> Any:
 # ---------------------------------------------------------------- the API
 
 
-app = FastAPI(title="Le Chonk", docs_url=None, redoc_url=None)
+app = FastAPI(title="ChonkDefendor", docs_url=None, redoc_url=None)
 app.state.backend = None
 
 
