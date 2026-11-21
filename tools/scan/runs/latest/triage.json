@@ -1,0 +1,1 @@
+{"schema":"kb-scan-report/1","generated_at":"2026-11-21T13:52:57Z","engine":{"name":"kb-scan","version":"0.1.0","static_musl":true,"swarm":true},"feeds":[],"findings":[],"stats":{"packages":0,"cves":0,"findings":0,"errors":[]},"shards":[{"name":"sync","status":"ok","generated_at":"2026-11-21T13:52:56Z"}]}

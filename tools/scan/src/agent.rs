@@ -16,6 +16,11 @@ fn scrubbed_env(cmd: &mut Command) {
     cmd.env("PATH", path);
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     cmd.env("HOME", home);
+    // test hook only: lets tests/passthrough-sandbox.sh prove agent wrapping;
+    // it is not a secret and carries no credentials
+    if let Ok(m) = std::env::var("KB_SCAN_SANDBOX_MARKER") {
+        cmd.env("KB_SCAN_SANDBOX_MARKER", m);
+    }
 }
 
 pub struct AgentTask {

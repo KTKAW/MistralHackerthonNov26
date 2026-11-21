@@ -32,6 +32,8 @@ pub struct SwarmArgs {
     pub stop_file: Option<String>,
     /// Workflow run id for the triage.json handoff; "latest" if not given.
     pub run_id: Option<String>,
+    /// Local-debugging bypass of the fail-closed sandbox gate (never in production).
+    pub allow_unsandboxed: bool,
 }
 
 struct ChildProc {
@@ -50,21 +52,42 @@ fn spawn_shard(
     interval: u64,
     max_runs: u64,
     shard_out: &Path,
+    sandbox_cmd: &[String],
+    allow_unsandboxed: bool,
 ) -> Result<Child, String> {
-    let mut cmd = Command::new(exe);
-    cmd.arg("watch")
-        .arg("--shard").arg(shard)
-        .arg("--interval").arg(interval.to_string())
-        .arg("--max-runs").arg(max_runs.to_string())
-        .arg("--out-dir").arg(shard_out)
+    // Network shards (sync + feeds) are re-exec'd under the top-level
+    // sandbox_cmd (argv array, no shell). Agent shards are not wrapped here —
+    // their spawned agents are sandboxed separately.
+    let wrap = merge::is_network_shard(shard) && !sandbox_cmd.is_empty();
+    let mut argv: Vec<String> = Vec::new();
+    if wrap {
+        argv.extend(sandbox_cmd.iter().cloned());
+    }
+    argv.push(exe.to_string_lossy().into_owned());
+    argv.push("watch".to_string());
+    argv.push("--shard".to_string());
+    argv.push(shard.to_string());
+    argv.push("--interval".to_string());
+    argv.push(interval.to_string());
+    argv.push("--max-runs".to_string());
+    argv.push(max_runs.to_string());
+    argv.push("--out-dir".to_string());
+    argv.push(shard_out.to_string_lossy().into_owned());
+    if !config_path.is_empty() {
+        argv.push("--config".to_string());
+        argv.push(config_path.to_string());
+    }
+    if allow_unsandboxed {
+        // propagate the debug bypass so shard children pass the same gate
+        argv.push("--allow-unsandboxed".to_string());
+    }
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..])
         .env("KB_SCAN_SHARD", shard)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit()); // shard progress lines stay visible on stderr
-    if !config_path.is_empty() {
-        cmd.arg("--config").arg(config_path);
-    }
-    cmd.spawn().map_err(|e| format!("failed to spawn shard {}: {}", shard, e))
+    cmd.spawn().map_err(|e| format!("failed to spawn shard {} (wrapped={}): {}", shard, wrap, e))
 }
 
 fn backoff_secs(fail_count: u32) -> u64 {
@@ -139,6 +162,12 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
 
     let shards = merge::shard_list(&cfg);
     let run_id = args.run_id.clone().unwrap_or_else(|| "latest".to_string());
+
+    // FAIL CLOSED: network shards (sync + feeds) must run under sandbox_cmd.
+    let network_shards: Vec<String> = shards.iter().filter(|s| merge::is_network_shard(s)).cloned().collect();
+    if let Err(code) = merge::require_sandbox(&cfg.sandbox_cmd, &network_shards, args.allow_unsandboxed) {
+        return code;
+    }
     eprintln!("kb-scan: swarm starting with shards {:?} (interval {}s, max-runs {})", shards, cfg.interval_secs, cfg.max_runs);
 
     let exe = match std::env::current_exe() {
@@ -152,7 +181,7 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
     let mut children: HashMap<String, ChildProc> = HashMap::new();
     for shard in &shards {
         let shard_out = shards_dir.join(shard);
-        match spawn_shard(&exe, shard, &args.config_path, cfg.interval_secs, cfg.max_runs, &shard_out) {
+        match spawn_shard(&exe, shard, &args.config_path, cfg.interval_secs, cfg.max_runs, &shard_out, &cfg.sandbox_cmd, args.allow_unsandboxed) {
             Ok(child) => {
                 eprintln!("kb-scan: spawned shard {} (pid {}) -> {:?}", shard, child.id(), shard_out);
                 children.insert(
@@ -217,7 +246,7 @@ pub fn run_swarm(args: &SwarmArgs) -> i32 {
             let cp = children.get_mut(shard).expect("shard present");
             if cp.child.is_none() && !cp.finished && Instant::now() >= cp.next_spawn {
                 let shard_out = shards_dir.join(shard);
-                match spawn_shard(&exe, shard, &args.config_path, cfg.interval_secs, cfg.max_runs, &shard_out) {
+                match spawn_shard(&exe, shard, &args.config_path, cfg.interval_secs, cfg.max_runs, &shard_out, &cfg.sandbox_cmd, args.allow_unsandboxed) {
                     Ok(child) => {
                         eprintln!("kb-scan: respawned shard {} (pid {})", shard, child.id());
                         cp.child = Some(child);

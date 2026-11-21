@@ -120,7 +120,7 @@ fn watch_lock_conflict_exits_4() {
     // --force overrides
     let (code, _, _) = run(&[
         "watch", "--config", cfg_path.to_str().unwrap(), "--out-dir", dir.to_str().unwrap(),
-        "--max-runs", "1", "--interval", "1", "--force",
+        "--max-runs", "1", "--interval", "1", "--force", "--allow-unsandboxed",
     ]);
     assert!(code == 0 || code == 3, "expected 0/3 with force, got {}", code);
     // reports were written
@@ -194,8 +194,8 @@ fn shard_path_isolation_two_sync_shards() {
     let a = dir.join("shardA");
     let b = dir.join("shardB");
     // sync shards need only git (repo "."), feeds are disabled in the fixture
-    let (code_a, _, _) = run(&["watch", "--config", &cfg, "--out-dir", a.to_str().unwrap(), "--shard", "sync", "--max-runs", "1", "--interval", "1"]);
-    let (code_b, _, _) = run(&["watch", "--config", &cfg, "--out-dir", b.to_str().unwrap(), "--shard", "sync", "--max-runs", "1", "--interval", "1"]);
+    let (code_a, _, _) = run(&["watch", "--config", &cfg, "--out-dir", a.to_str().unwrap(), "--shard", "sync", "--max-runs", "1", "--interval", "1", "--allow-unsandboxed"]);
+    let (code_b, _, _) = run(&["watch", "--config", &cfg, "--out-dir", b.to_str().unwrap(), "--shard", "sync", "--max-runs", "1", "--interval", "1", "--allow-unsandboxed"]);
     assert!(code_a == 0 || code_a == 3, "code_a={}", code_a);
     assert!(code_b == 0 || code_b == 3, "code_b={}", code_b);
     // each shard wrote only under its own out-dir
@@ -369,7 +369,7 @@ fn swarm_writes_triage_handoff() {
     let o = Command::new(BIN)
         .args([
             "swarm", "--config", cfg_path.to_str().unwrap(), "--out-dir", out.to_str().unwrap(),
-            "--interval", "1", "--max-runs", "1", "--run-id", "testrun",
+            "--interval", "1", "--max-runs", "1", "--run-id", "testrun", "--allow-unsandboxed",
         ])
         .output()
         .unwrap();
@@ -390,6 +390,315 @@ fn swarm_writes_triage_handoff() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+fn sandbox_wrapper() -> String {
+    format!("{}/tests/passthrough-sandbox.sh", env!("CARGO_MANIFEST_DIR"))
+}
+
+#[test]
+fn swarm_without_sandbox_fails_closed() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it13-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (cfg, _inv) = write_fixture_config(&dir); // feeds disabled, but sync is a network shard
+    let (code, _, stderr) = run(&["swarm", "--config", &cfg, "--out-dir", dir.join("out").to_str().unwrap(), "--interval", "1", "--max-runs", "1"]);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("network shards require sandbox_cmd (bwrap) — set it in config or pass --allow-unsandboxed for local debugging only"), "stderr: {}", stderr);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn swarm_allow_unsandboxed_runs_with_loud_warning() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it14-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (cfg, _inv) = write_fixture_config(&dir);
+    let out = dir.join("out");
+    let (code, _, stderr) = run(&["swarm", "--config", &cfg, "--out-dir", out.to_str().unwrap(), "--interval", "1", "--max-runs", "1", "--allow-unsandboxed"]);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, stderr);
+    assert!(stderr.contains("WARNING") && stderr.contains("WITHOUT a sandbox"), "stderr: {}", stderr);
+    assert!(out.join("shards").join("sync").join("latest-sync.json").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn swarm_passthrough_sandbox_wraps_network_shards_only() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it15-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let qfile = dir.join("queries.txt");
+    std::fs::write(&qfile, "NVD CVE-2026 | NVD\n").unwrap();
+    let marker = dir.join("marker.log");
+    let cfg_path = dir.join("config.json");
+    let inv_path = dir.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    // top-level sandbox_cmd wraps network shard children; explore.sandbox_cmd
+    // is NOT set, so agent spawns must NOT go through the top-level wrapper.
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"sandbox_cmd\": [\"sh\", {:?}], \
+             \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
+             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+            inv_path.to_str().unwrap(),
+            sandbox_wrapper(),
+            qfile.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+        ),
+    )
+    .unwrap();
+    let out = dir.join("out");
+    let o = Command::new(BIN)
+        .args(["swarm", "--config", cfg_path.to_str().unwrap(), "--out-dir", out.to_str().unwrap(), "--interval", "1", "--max-runs", "1"])
+        .env("KB_SCAN_SANDBOX_MARKER", &marker)
+        .output()
+        .unwrap();
+    let code = o.status.code().unwrap_or(-1);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
+    let marker_text = std::fs::read_to_string(&marker).unwrap_or_default();
+    // the sync shard child was re-exec'd through the wrapper: argv logged
+    assert!(marker_text.contains("watch --shard sync"), "marker: {}", marker_text);
+    // agent spawns never use the top-level sandbox wrapper
+    assert!(!marker_text.contains("stub-agent"), "marker: {}", marker_text);
+    // ...but the explore shard still ran (agent spawned via its own cmd)
+    assert!(out.join("shards").join("explore").join("leads.json").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn explore_sandbox_cmd_wraps_agents() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it16-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let qfile = dir.join("queries.txt");
+    std::fs::write(&qfile, "NVD CVE-2026 | NVD\n").unwrap();
+    let marker = dir.join("marker.log");
+    let cfg_path = dir.join("config.json");
+    let inv_path = dir.join("inventory.json");
+    std::fs::write(&inv_path, r#"{"packages": [], "products": [], "cves": []}"#).unwrap();
+    std::fs::write(
+        &cfg_path,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \
+             \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \
+             \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}, \"sandbox_cmd\": [\"sh\", {:?}]}}}}",
+            inv_path.to_str().unwrap(),
+            qfile.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+            sandbox_wrapper(),
+        ),
+    )
+    .unwrap();
+    let out = dir.join("shard");
+    let o = Command::new(BIN)
+        .args(["watch", "--config", cfg_path.to_str().unwrap(), "--out-dir", out.to_str().unwrap(), "--shard", "explore", "--max-runs", "1", "--interval", "1"])
+        .env("KB_SCAN_SANDBOX_MARKER", &marker)
+        .output()
+        .unwrap();
+    let code = o.status.code().unwrap_or(-1);
+    assert!(code == 0 || code == 3, "code={} stderr={}", code, String::from_utf8_lossy(&o.stderr));
+    let marker_text = std::fs::read_to_string(&marker).unwrap_or_default();
+    assert!(marker_text.contains("stub-agent"), "agent was not wrapped by explore.sandbox_cmd; marker: {}", marker_text);
+    assert!(out.join("leads.json").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn watch_full_pipeline_without_sandbox_fails_closed() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-it17-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (cfg, _inv) = write_fixture_config(&dir); // full watch does sync (network)
+    let (code, _, stderr) = run(&["watch", "--config", &cfg, "--out-dir", dir.join("w").to_str().unwrap(), "--max-runs", "1", "--interval", "1"]);
+    assert_eq!(code, 2, "stderr: {}", stderr);
+    assert!(stderr.contains("network shards require sandbox_cmd"), "stderr: {}", stderr);
+    // non-network shard is not gated
+    let qfile = dir.join("q.txt");
+    std::fs::write(&qfile, "q | h\n").unwrap();
+    let cfg2 = dir.join("config2.json");
+    std::fs::write(
+        &cfg2,
+        format!(
+            "{{\"inventory\": {:?}, \"http_timeout_secs\": 10, \"feeds\": {{\"kev\": false, \"osv\": false, \"github\": false, \"epss\": false, \"nvd\": false}}, \"explore\": {{\"enabled\": true, \"max_per_cycle\": 1, \"queries_file\": {:?}, \"agent_cmd\": [\"sh\", {:?}], \"agent_prompt_file\": {:?}}}}}",
+            dir.join("inventory.json").to_str().unwrap(),
+            qfile.to_str().unwrap(),
+            stub_cmd(),
+            format!("{}/explore-prompt.md", env!("CARGO_MANIFEST_DIR")),
+        ),
+    )
+    .unwrap();
+    let (code2, _, _) = run(&["watch", "--config", cfg2.to_str().unwrap(), "--out-dir", dir.join("w2").to_str().unwrap(), "--shard", "explore", "--max-runs", "1", "--interval", "1"]);
+    assert!(code2 == 0 || code2 == 3, "code2={}", code2);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---- serve tests -----------------------------------------------------------
+
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::process::{Child, Stdio};
+use std::time::Duration;
+
+fn start_server(out_dir: &std::path::Path, extra: &[&str], token: Option<&str>) -> (Child, String) {
+    let mut cmd = Command::new(BIN);
+    cmd.args(["serve", "--out-dir", out_dir.to_str().unwrap(), "--addr", "127.0.0.1:0"])
+        .args(extra)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    if let Some(t) = token {
+        cmd.env("KB_SCAN_QUERY_TOKEN", t);
+    }
+    let mut child = cmd.spawn().expect("spawn serve");
+    let mut stdout = child.stdout.take().unwrap();
+    // first stdout line is {"listening":"127.0.0.1:PORT"}
+    let mut line = Vec::new();
+    let mut b = [0u8; 1];
+    loop {
+        match stdout.read(&mut b) {
+            Ok(0) => break,
+            Ok(_) => {
+                line.push(b[0]);
+                if b[0] == b'\n' {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let text = String::from_utf8_lossy(&line);
+    let addr = text
+        .trim()
+        .trim_start_matches("{\"listening\":\"")
+        .trim_end_matches("\"}")
+        .to_string();
+    (child, addr)
+}
+
+fn http_req(addr: &str, method: &str, path: &str, headers: &[(&str, &str)]) -> (u16, String, String) {
+    let mut s = TcpStream::connect(addr).expect("connect");
+    s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    let mut req = format!("{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n", method, path, addr);
+    for (k, v) in headers {
+        req.push_str(&format!("{}: {}\r\n", k, v));
+    }
+    req.push_str("\r\n");
+    s.write_all(req.as_bytes()).unwrap();
+    let mut resp = Vec::new();
+    s.read_to_end(&mut resp).unwrap();
+    let text = String::from_utf8_lossy(&resp).into_owned();
+    let status: u16 = text
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let (head, body) = match text.find("\r\n\r\n") {
+        Some(i) => (text[..i].to_string(), text[i + 4..].to_string()),
+        None => (text, String::new()),
+    };
+    (status, head, body)
+}
+
+fn serve_fixture(dir: &std::path::Path) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(
+        dir.join("latest.json"),
+        r#"{"schema":"kb-scan-report/1","generated_at":"2026-11-21T00:00:00Z","engine":{"name":"kb-scan","version":"0.1.0","swarm":true},"feeds":[],"findings":[
+            {"tier":1,"id":"MAL-1","kind":"osv","summary":"malicious package","source":"osv","package":"npm:evil@1.0.0","playbook":"malicious-dependency"},
+            {"tier":2,"id":"CVE-2026-1","kind":"kev","summary":"exploited Exchange bug","source":"kev","cve":"CVE-2026-1","playbook":"exploited-vulnerability"},
+            {"tier":4,"id":"GHSA-x","kind":"osv","summary":"low severity thing","source":"osv","package":"npm:x@1"}]}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("latest-sync.json"),
+        r#"{"schema":"kb-scan-sync/1","attention":["origin/knowledge moved abc..def: rebase before relying on ingested pages"]}"#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn serve_endpoints() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-serve1-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    serve_fixture(&dir);
+    let (mut child, addr) = start_server(&dir, &[], None);
+    let (st, _, body) = http_req(&addr, "GET", "/health", &[]);
+    assert_eq!(st, 200);
+    assert!(body.contains("\"ok\""));
+    let (st, head, body) = http_req(&addr, "GET", "/latest", &[]);
+    assert_eq!(st, 200);
+    assert!(head.contains("application/json"));
+    assert!(body.contains("kb-scan-report/1"));
+    let (st, _, body) = http_req(&addr, "GET", "/sync", &[]);
+    assert_eq!(st, 200);
+    assert!(body.contains("kb-scan-sync/1"));
+    let (st, _, body) = http_req(&addr, "GET", "/findings?tier=2", &[]);
+    assert_eq!(st, 200);
+    assert!(body.contains("CVE-2026-1") && !body.contains("MAL-1") && !body.contains("GHSA-x"), "body: {}", body);
+    let (st, _, _) = http_req(&addr, "GET", "/findings", &[]);
+    assert_eq!(st, 400);
+    let (st, _, _) = http_req(&addr, "GET", "/nope", &[]);
+    assert_eq!(st, 404);
+    let (st, _, _) = http_req(&addr, "POST", "/latest", &[]);
+    assert_eq!(st, 405);
+    let (st, head, body) = http_req(&addr, "GET", "/brief", &[]);
+    assert_eq!(st, 200);
+    assert!(head.contains("text/plain"));
+    let words = body.split_whitespace().count();
+    assert!(words <= 90, "brief {} words: {}", words, body);
+    assert!(body.contains("A person approves before anything is sent."), "body: {}", body);
+    assert!(body.contains("CVE-2026-1"));
+    child.kill().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn serve_missing_file_404() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-serve2-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (mut child, addr) = start_server(&dir, &[], None);
+    let (st, _, _) = http_req(&addr, "GET", "/latest", &[]);
+    assert_eq!(st, 404);
+    let (st, _, body) = http_req(&addr, "GET", "/health", &[]);
+    assert_eq!(st, 200);
+    assert!(body.contains("ok"));
+    child.kill().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn serve_token_required_when_env_set() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-serve3-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    serve_fixture(&dir);
+    let (mut child, addr) = start_server(&dir, &[], Some("sekrit-test-token"));
+    let (st, _, _) = http_req(&addr, "GET", "/health", &[]);
+    assert_eq!(st, 401);
+    let (st, _, _) = http_req(&addr, "GET", "/health", &[("Authorization", "Bearer wrong")]);
+    assert_eq!(st, 401);
+    let (st, _, body) = http_req(&addr, "GET", "/health", &[("Authorization", "Bearer sekrit-test-token")]);
+    assert_eq!(st, 200);
+    assert!(body.contains("ok"));
+    child.kill().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn serve_non_loopback_refused_without_flag() {
+    let dir = std::env::temp_dir().join(format!("kb-scan-serve4-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let o = Command::new(BIN)
+        .args(["serve", "--out-dir", dir.to_str().unwrap(), "--addr", "0.0.0.0:0"])
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code().unwrap_or(-1), 2);
+    assert!(String::from_utf8_lossy(&o.stderr).contains("refusing non-loopback bind"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn stop_file_ends_watch() {
     let dir = std::env::temp_dir().join(format!("kb-scan-it4-{}", std::process::id()));
@@ -403,7 +712,7 @@ fn stop_file_ends_watch() {
     std::fs::write(&stop, "stop").unwrap();
     let (code, _, _) = run(&[
         "watch", "--config", cfg_path.to_str().unwrap(), "--out-dir", dir.to_str().unwrap(),
-        "--interval", "1", "--stop-file", stop.to_str().unwrap(),
+        "--interval", "1", "--stop-file", stop.to_str().unwrap(), "--allow-unsandboxed",
     ]);
     // stop file present before first cycle: loop ends after at most one cycle
     assert!(code == 0 || code == 3, "got {}", code);

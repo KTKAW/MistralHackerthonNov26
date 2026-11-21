@@ -8,5 +8,6 @@
   "max_body_bytes": 8388608,
   "epss_threshold": 0.5,
   "kev_recent_days": 30,
-  "feeds": { "kev": true, "osv": true, "github": true, "epss": true, "nvd": false }
+  "feeds": { "kev": true, "osv": true, "github": true, "epss": true, "nvd": false },
+  "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc", "/etc", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "{repo}", "{repo}", "--bind", "{out}", "{out}", "--chdir", "{repo}"]
 }

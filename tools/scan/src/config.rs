@@ -79,6 +79,10 @@ pub struct Config {
     pub explore: ExploreCfg,
     pub verify: VerifyCfg,
     pub workflow_root: String,
+    /// Top-level sandbox wrapper (e.g. bwrap) applied to ALL network-touching
+    /// shard children (feeds + sync). Fail-closed: empty + network shards
+    /// enabled = exit 2 unless --allow-unsandboxed.
+    pub sandbox_cmd: Vec<String>,
 }
 
 impl Default for Config {
@@ -97,6 +101,7 @@ impl Default for Config {
             explore: ExploreCfg::default(),
             verify: VerifyCfg::default(),
             workflow_root: "runs".to_string(),
+            sandbox_cmd: Vec::new(),
         }
     }
 }
@@ -183,6 +188,7 @@ pub fn parse_config(text: &str) -> Result<Config, String> {
             }
             "kev_recent_days" => cfg.kev_recent_days = get_u64(&v, k)?,
             "workflow_root" => cfg.workflow_root = get_str(&v, k)?,
+            "sandbox_cmd" => cfg.sandbox_cmd = get_str_array(&v, k)?,
             "explore" => {
                 let (enabled, max_per_cycle, queries_file, agent_cmd, prompt_file, sandbox_cmd) = parse_agent_block(val, true)?;
                 cfg.explore = ExploreCfg {
@@ -348,6 +354,12 @@ mod tests {
         assert!(parse_config(r#"{"verify": {"queries_file": "x"}}"#).is_err()); // queries_file is explore-only
         assert!(parse_config(r#"{"workflow_root": 3}"#).is_err());
         assert!(parse_config(r#"{"explore": {"agent_cmd": "sh"}}"#).is_err());
+        // top-level sandbox_cmd
+        assert!(parse_config("{}").unwrap().sandbox_cmd.is_empty());
+        let cfg = parse_config(r#"{"sandbox_cmd": ["bwrap", "--ro-bind", "/", "/"]}"#).unwrap();
+        assert_eq!(cfg.sandbox_cmd, vec!["bwrap".to_string(), "--ro-bind".to_string(), "/".to_string(), "/".to_string()]);
+        assert!(parse_config(r#"{"sandbox_cmd": "bwrap"}"#).is_err());
+        assert!(parse_config(r#"{"sandbox_cmd": [1]}"#).is_err());
     }
 
     #[test]

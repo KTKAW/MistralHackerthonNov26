@@ -46,6 +46,30 @@ pub fn is_valid_shard(name: &str) -> bool {
     SHARD_NAMES.contains(&name)
 }
 
+/// Network-touching shards: the sync shard (git fetch) and all feed shards.
+/// These MUST run under sandbox_cmd (fail-closed). explore/verify shards do
+/// their network I/O inside their own always-sandboxed agent processes.
+pub fn is_network_shard(name: &str) -> bool {
+    name == "sync" || matches!(name, "kev" | "osv" | "github" | "epss" | "nvd")
+}
+
+/// Fail-closed sandbox gate for network shards. Returns Err(2) when any
+/// network shard is enabled, no sandbox_cmd is configured, and
+/// --allow-unsandboxed was not passed. With --allow-unsandboxed it logs a
+/// loud warning instead.
+pub fn require_sandbox(sandbox_cmd: &[String], network_shards: &[String], allow_unsandboxed: bool) -> Result<(), i32> {
+    if network_shards.is_empty() || !sandbox_cmd.is_empty() {
+        return Ok(());
+    }
+    if allow_unsandboxed {
+        eprintln!("kb-scan: WARNING: --allow-unsandboxed is set — network shards {:?} are running WITHOUT a sandbox (local debugging only, never in production)", network_shards);
+        return Ok(());
+    }
+    eprintln!("kb-scan: network shards require sandbox_cmd (bwrap) — set it in config or pass --allow-unsandboxed for local debugging only");
+    eprintln!("kb-scan: refusing to start unsandboxed network shards: {:?}", network_shards);
+    Err(2)
+}
+
 pub struct Merged {
     /// The merged kb-scan-report/1.
     pub report: Value,

@@ -30,10 +30,34 @@ kb-scan sync   [--repo DIR] [--out FILE] [--pretty]
 kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max-filesize BYTES]
 kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
                [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME]
+               [--allow-unsandboxed]
 kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
-               [--force] [--stop-file FILE] [--run-id ID]
+               [--force] [--stop-file FILE] [--run-id ID] [--allow-unsandboxed]
 kb-scan merge  [--out-dir DIR] [--out FILE] [--pretty]
+kb-scan serve  --out-dir DIR [--addr 127.0.0.1:8787] [--allow-non-localhost]
 ```
+
+### Active querying: `serve` (localhost-only query loop)
+
+`kb-scan serve` runs a read-only HTTP query loop over the report files
+(std::net::TcpListener only, zero deps, one thread per connection, request
+head capped at 8 KiB, read/write timeouts, response bodies capped):
+
+- `GET /health` → `{"status":"ok"}`
+- `GET /latest` → `<out-dir>/latest.json` bytes (`kb-scan-report/1`)
+- `GET /sync` → `<out-dir>/latest-sync.json` bytes (`kb-scan-sync/1`)
+- `GET /findings?tier=N` → latest.json filtered to that tier (parse + filter + re-serialise)
+- `GET /brief` → ≤90-word `text/plain` brief rendered engine-side from
+  latest.json (+ sync attention lines), ending with the standing closer
+  "A person approves before anything is sent."
+
+Unknown path or missing file → 404; non-GET → 405. Binds loopback only; a
+non-loopback `--addr` is refused (exit 2) unless `--allow-non-localhost` is
+passed (local debugging only). If `KB_SCAN_QUERY_TOKEN` is set, requests need
+`Authorization: Bearer <token>` (constant-time-ish compare; the token is never
+logged or written). The bound address is announced as JSON on stdout
+(`{"listening":"127.0.0.1:8787"}`); progress goes to stderr. The main
+workflow, a `/loop` cron, or an agent can poll these on any schedule.
 
 ### Explorer / verifier orchestration (the brain stays in Rust)
 
@@ -117,6 +141,25 @@ kb-scan swarm --config tools/scan/out/orch-test-config.json \
   preserved, stats are summed, missing shards are tolerated, and the sync
   shard's `latest-sync.json` is surfaced separately. The schema stays pinned at
   `kb-scan-report/1`.
+
+### Sandboxing is mandatory for network shards (fail-closed)
+
+Every shard that performs network I/O — the `sync` shard (git fetch) and all
+feed shards — **must** run inside the sandbox. Config gains a top-level
+`sandbox_cmd` (array, e.g. the bwrap invocation from `bwrap.example.sh`, see
+`config.example.json`). The swarm supervisor re-execs each network shard child
+under `sandbox_cmd` (argv array, never a shell) with the same args plus
+`--shard`.
+
+**Fail-closed:** if any network shard is enabled and `sandbox_cmd` is empty,
+`swarm` and `watch` exit **2** with
+`network shards require sandbox_cmd (bwrap) — set it in config or pass --allow-unsandboxed for local debugging only`.
+`--allow-unsandboxed` (on `swarm` and `watch`) bypasses the check for local
+debugging only and logs a loud stderr warning; the supervisor propagates it to
+shard children. `explore`/`verify` agent spawning is sandboxed separately via
+`explore.sandbox_cmd` / `verify.sandbox_cmd` and is never wrapped by the
+top-level `sandbox_cmd`; agent spawns have no override. Tests prove wrapping
+with `tests/passthrough-sandbox.sh`, a wrapper that logs its argv and execs.
 
 ### Swarm isolation model
 

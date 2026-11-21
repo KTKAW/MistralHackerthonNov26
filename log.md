@@ -96,3 +96,9 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 ## [2026-11-21] edit | Explorer/verifier orchestration in kb-scan swarm (agent.rs, explore.rs, verify.rs, triage.json handoff)
 
 - tools/ (15 files)
+
+## [2026-11-21] edit | kb-scan serve (localhost query API), mandatory sandboxing, voice brief + audio loop (Voxtral)
+
+- README.md
+- feeds.md
+- tools/ (14 files)

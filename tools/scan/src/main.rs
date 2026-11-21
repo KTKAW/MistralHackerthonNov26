@@ -19,6 +19,7 @@ mod merge;
 mod proc;
 mod sanitize;
 mod scan;
+mod serve;
 mod swarm;
 mod sync;
 mod triage;
@@ -39,9 +40,11 @@ USAGE:
   kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max-filesize BYTES]
   kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
                  [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME]
+                 [--allow-unsandboxed]
   kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
-                 [--force] [--stop-file FILE] [--run-id ID]
+                 [--force] [--stop-file FILE] [--run-id ID] [--allow-unsandboxed]
   kb-scan merge  [--out-dir DIR] [--out FILE] [--pretty]
+  kb-scan serve  --out-dir DIR [--addr 127.0.0.1:8787] [--allow-non-localhost]
 
 Exit codes: 0 ok · 2 usage/config error · 3 feed/git error (partial results reported) · 4 lock held.
 stdout carries only JSON; progress goes to stderr.";
@@ -77,7 +80,7 @@ fn parse_flags(args: &[String], allowed: &[&str]) -> Result<Flags, String> {
                 }
                 None => {
                     // boolean flags take no value
-                    if matches!(key.as_str(), "pretty" | "force") {
+                    if matches!(key.as_str(), "pretty" | "force" | "allow-unsandboxed") {
                         bools.insert(key);
                     } else {
                         if i + 1 >= args.len() {
@@ -404,7 +407,7 @@ fn cmd_scan(args: &[String]) -> i32 {
 fn cmd_watch(args: &[String]) -> i32 {
     let flags = match parse_flags(
         args,
-        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file", "max-filesize", "shard"],
+        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file", "max-filesize", "shard", "allow-unsandboxed"],
     ) {
         Ok(f) => f,
         Err(e) => {
@@ -444,13 +447,14 @@ fn cmd_watch(args: &[String]) -> i32 {
         stop_file: flags.get("stop-file").map(|s| s.to_string()),
         max_filesize,
         shard: flags.get("shard").map(|s| s.to_string()),
+        allow_unsandboxed: flags.bool("allow-unsandboxed"),
     })
 }
 
 fn cmd_swarm(args: &[String]) -> i32 {
     let flags = match parse_flags(
         args,
-        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file", "run-id"],
+        &["config", "interval", "max-runs", "out-dir", "pretty", "force", "stop-file", "run-id", "allow-unsandboxed"],
     ) {
         Ok(f) => f,
         Err(e) => {
@@ -482,6 +486,7 @@ fn cmd_swarm(args: &[String]) -> i32 {
         force: flags.bool("force"),
         stop_file: flags.get("stop-file").map(|s| s.to_string()),
         run_id: flags.get("run-id").map(|s| s.to_string()),
+        allow_unsandboxed: flags.bool("allow-unsandboxed"),
     })
 }
 
@@ -504,6 +509,30 @@ fn cmd_merge(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_serve(args: &[String]) -> i32 {
+    let flags = match parse_flags(args, &["out-dir", "addr", "allow-non-localhost"]) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("kb-scan serve: {}", e);
+            eprintln!("{}", USAGE);
+            return 2;
+        }
+    };
+    let out_dir = match flags.get("out-dir") {
+        Some(d) => d.to_string(),
+        None => {
+            eprintln!("kb-scan serve: --out-dir is required");
+            eprintln!("{}", USAGE);
+            return 2;
+        }
+    };
+    serve::run_serve(&serve::ServeArgs {
+        out_dir,
+        addr: flags.get("addr").unwrap_or(serve::DEFAULT_ADDR).to_string(),
+        allow_non_localhost: flags.bool("allow-non-localhost"),
+    })
+}
+
 fn real_main(args: &[String]) -> i32 {
     match args.first().map(|s| s.as_str()) {
         None => {
@@ -522,6 +551,7 @@ fn real_main(args: &[String]) -> i32 {
         Some("watch") => cmd_watch(&args[1..]),
         Some("swarm") => cmd_swarm(&args[1..]),
         Some("merge") => cmd_merge(&args[1..]),
+        Some("serve") => cmd_serve(&args[1..]),
         Some(other) => {
             eprintln!("kb-scan: unknown subcommand {:?}", other);
             eprintln!("{}", USAGE);

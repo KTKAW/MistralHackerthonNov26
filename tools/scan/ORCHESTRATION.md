@@ -158,6 +158,47 @@ python3 tools/scan.py feeds
 - After any wrapper-driven change to typed pages, run `python3 tools/lint.py --sync`
   and keep it green.
 
+## Active querying: `kb-scan serve` (localhost-only query loop)
+
+Alongside the file handoff, the swarm can answer queries live:
+`kb-scan serve --out-dir DIR [--addr 127.0.0.1:8787]`. std `TcpListener` only, zero
+deps, read-only GET endpoints: `/health`, `/latest` (merged kb-scan-report/1),
+`/sync` (kb-scan-sync/1), `/findings?tier=N` (filtered), `/brief` (the ≤90-word
+spoken-brief text, rendered engine-side). Binds loopback only; a non-loopback addr
+is refused unless `--allow-non-localhost` is passed (local debugging only). If
+`KB_SCAN_QUERY_TOKEN` is set, requests need `Authorization: Bearer <token>`; the
+token is never logged or written. Responses are the JSON files' bytes with
+`Content-Type: application/json`; unknown path → 404; method other than GET → 405.
+The main workflow, a harness `/loop` cron, or an agent can poll these on any
+schedule. `tools/scan.py` gains a thin `query` subcommand (health/latest/sync/
+findings/brief) that GETs the local endpoint and prints JSON.
+
+## Voice briefings (Mistral Voxtral)
+
+`python3 tools/scan.py brief --json out/latest.json [--out brief.txt] [--speak]`
+renders a ≤ 90-word, decision-ready spoken brief from a `kb-scan-report/1`: the top
+verified tier 1/2 findings (id, what it is, what we run, patch target) plus any
+sync `attention[]` lines, then the standing line "a person approves before anything
+is sent". `--speak` posts the brief to Mistral's speech endpoint (Voxtral TTS — the
+same model family as this harness's `active_tts_model = "voxtral-tts"`) using
+`MISTRAL_API_KEY` from the environment only — the tool never prints, logs or stores
+the key — writes `out/brief.wav`, and plays it if a player exists. Without the env
+key, `--speak` exits 2 and tells the user to set their own key. The engine itself
+stays model-free; brief text is rendered deterministically in Python.
+
+## Sandboxing is mandatory for anything that touches the network
+
+Rule (fail-closed): every shard that performs network I/O — all feed shards and the
+`sync` shard — MUST run inside the sandbox. The supervisor re-execs each such shard
+child under `sandbox_cmd` (bwrap locally, container in deploy). If a network shard
+would start without a sandbox, the engine exits 2 with a clear message unless
+`--allow-unsandboxed` is passed explicitly (for local debugging only; never in
+production). Spawned LLM agents are always sandboxed, no override. `tools/scan.py`
+additionally wraps the whole engine invocation in bwrap when bwrap is present.
+The allowlist (5 compiled-in feed hosts + the git remote host) is enforced in code
+*and* at the network layer where the platform allows it; bwrap containers rely on
+the in-code allowlist plus process isolation.
+
 ## Containerisation strategy (decision)
 
 - **Here and in dev:** the engine runs as an ordinary process on the host under

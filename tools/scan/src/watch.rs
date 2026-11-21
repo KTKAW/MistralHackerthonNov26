@@ -25,6 +25,8 @@ pub struct WatchArgs {
     pub max_filesize: Option<usize>,
     /// Swarm shard mode: run only this shard's work ("sync" or one feed name).
     pub shard: Option<String>,
+    /// Local-debugging bypass of the fail-closed sandbox gate (never in production).
+    pub allow_unsandboxed: bool,
 }
 
 /// Atomically write a file: write to `<path>.tmp-<pid>` then rename.
@@ -176,6 +178,37 @@ pub fn run_watch(args: &WatchArgs) -> i32 {
     let do_scan = shard.is_none() || (shard.as_deref() != Some("sync") && shard.as_deref() != Some("explore") && shard.as_deref() != Some("verify"));
     let do_explore = shard.as_deref() == Some("explore");
     let do_verify = shard.as_deref() == Some("verify");
+
+    // FAIL CLOSED: this watch invocation performs network I/O (sync and/or
+    // feeds) and must run under sandbox_cmd — the swarm supervisor re-execs
+    // network shard children under the top-level sandbox_cmd, so a directly
+    // invoked watch hits this gate itself.
+    if do_sync || do_scan {
+        let network: Vec<String> = {
+            let mut v = Vec::new();
+            if do_sync {
+                v.push("sync".to_string());
+            }
+            if do_scan {
+                for f in ["kev", "osv", "github", "epss", "nvd"] {
+                    let on = match f {
+                        "kev" => effective_cfg.feeds.kev,
+                        "osv" => effective_cfg.feeds.osv,
+                        "github" => effective_cfg.feeds.github,
+                        "epss" => effective_cfg.feeds.epss,
+                        _ => effective_cfg.feeds.nvd,
+                    };
+                    if on {
+                        v.push(f.to_string());
+                    }
+                }
+            }
+            v
+        };
+        if let Err(code) = merge::require_sandbox(&cfg.sandbox_cmd, &network, args.allow_unsandboxed) {
+            return code;
+        }
+    }
 
     let inventory = if do_scan {
         match config::load_inventory(&effective_cfg, None) {

@@ -84,7 +84,7 @@ The reasoning is on [Patching and exploit speed](concepts/patching-and-exploit-s
 
 ## The continuous scanner
 
-`tools/scan.py` wraps the kb-scan engine, a static Rust binary under `tools/scan/` that is built on demand. It polls the feeds above against an inventory of what we run and writes `kb-scan-report/1` JSON. `python3 tools/scan.py loop` runs it continuously, `python3 tools/scan.py sync` polls this repository's git remote for new branches and commits, and `python3 tools/scan.py report --json <report>` renders the newest report as a snapshot page at [kb-scan: continuous scanner report](advisories/scan-latest.md). The engine only reports; a person acts on what it finds.
+`tools/scan.py` wraps the kb-scan engine, a static Rust binary under `tools/scan/` that is built on demand. It polls the feeds above against an inventory of what we run and writes `kb-scan-report/1` JSON. `python3 tools/scan.py loop` runs it continuously, `python3 tools/scan.py sync` polls this repository's git remote for new branches and commits, and `python3 tools/scan.py report --json <report>` renders the newest report as a snapshot page at [kb-scan: continuous scanner report](advisories/scan-latest.md). The engine only reports; a person acts on what it finds. Network-touching subcommands run inside `bwrap` when it is installed and fail closed (exit 2) without it — `--allow-unsandboxed` overrides for local debugging only. `python3 tools/scan.py brief --json <report>` renders a spoken-style summary of the newest findings, and `python3 tools/scan.py audio-loop --json <report>` speaks an alert when a new verified finding or sync attention line appears.
 
 ## What the feeds do not tell you
 
