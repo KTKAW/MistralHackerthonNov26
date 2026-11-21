@@ -14,6 +14,7 @@ A wiki on cybersecurity and patches for people and small teams. Agents write and
 |---|---|---|
 | `index.md` | "By signal" and "By decision" routing, then every page in one line | Read first |
 | `manifest.json` | Every typed page with its frontmatter, for agents that route in code | Generated; never edit |
+| `system.md` | The tool this knowledge base serves: pipeline, diagrams, verdict file, where the knowledge base plugs in | Ingest again when the design branch changes |
 | `overview.md` | The threat picture, what works, where evidence is thin, gaps | Update when the picture changes |
 | `glossary.md` | One line per term | Use these terms as defined |
 | `playbooks/` | One runbook per kind of incident | Each step cites a source or is tagged *(baseline)* |
@@ -41,6 +42,7 @@ A wiki on cybersecurity and patches for people and small teams. Agents write and
 - You propose; a person acts. Revoking, rotating, erasing, patching production, paying, reporting and sending messages are done by the owner of the account or system.
 - Never ask for, repeat or store the value of a secret. Identify a key by provider, name and last four characters.
 - Asked whether a message or caller is genuine, give the verification route, never a verdict.
+- Asked whether a repository is affected, say "no reachable path found", never "safe". A claim you cannot prove is "needs a human", not a guess.
 - A step tagged *(baseline)* is a baseline step: standard practice that has no source note here yet. Say so when you rely on one.
 - Phone numbers and services are for the UK. Say so when the person is elsewhere.
 
@@ -59,4 +61,5 @@ A wiki on cybersecurity and patches for people and small teams. Agents write and
 - **Ingest a source.** Read it. Write `sources/who-slug.md` with `read: full` or `partial`. Fold what it says into the concept pages, playbooks and glossary it touches, replacing *(baseline)* tags it can support.
 - **Raise a read level.** Read the original behind a `via-report` or `via-snippet` note, correct the note and the pages that cite it, and set `read: full`.
 - **Record an advisory.** Copy the frontmatter of an existing record in `advisories/`. Name the file `YYYY-MM-slug.md`. Fill `affects` with tags an inventory can be matched against, and `playbook` with the runbook to follow.
+- **Ingest the system design again.** Read `PROJECT.md` and `docs/architecture.html` on the branch `docs/system-design`. Update the two `team-…` source notes, `system.md` and its diagrams, and set `design_commit` to the commit you read.
 - **Refresh patches.** Run `python3 tools/kev.py`, then the lint with `--sync`.

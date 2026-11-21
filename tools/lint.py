@@ -57,7 +57,7 @@ REQUIRED = {
     "feed-snapshot": ["type", "title", "feed", "fetched"],
 }
 ALLOWED = {
-    ("source", "kind"): {"article", "report", "paper", "docs", "guidance", "feed", "research-report"},
+    ("source", "kind"): {"article", "report", "paper", "docs", "guidance", "feed", "research-report", "design-doc", "advisory"},
     ("source", "read"): {"full", "partial", "via-report", "via-snippet"},
     ("concept", "status"): {"settled", "evolving", "contested"},
     ("playbook", "severity"): {"critical", "high", "medium", "low"},
@@ -401,7 +401,7 @@ def run_checks(args: argparse.Namespace, today: dt.date) -> tuple[Report, str]:
     sources, concepts, playbooks = by_folder["sources"], by_folder["concepts"], by_folder["playbooks"]
     advisories = {p for p in by_folder["advisories"] if pages[p][0].get("type") == "advisory"}
     snapshots = by_folder["advisories"] - advisories
-    cited_pages = sorted(concepts | playbooks | advisories | ({ROOT / "overview.md", ROOT / "feeds.md"} & set(pages)))
+    cited_pages = sorted(concepts | playbooks | advisories | ({ROOT / "overview.md", ROOT / "feeds.md", ROOT / "system.md"} & set(pages)))
 
     check_frontmatter(report, pages, by_folder)
     check_citations(report, pages, links, sources, concepts, playbooks, advisories)

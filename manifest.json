@@ -202,6 +202,28 @@
    "updated": "2026-11-21"
   },
   {
+   "path": "advisories/2026-10-authlib-cve-2026-96760.md",
+   "type": "advisory",
+   "title": "Authlib accepts a JWS with no signatures (CVE-2026-96760)",
+   "date": "2026-10-27",
+   "kind": "vulnerability",
+   "exploited": "demonstrated",
+   "fix_status": "fixed",
+   "fixed_in": "1.9.0",
+   "affects": [
+    "authlib",
+    "pypi",
+    "python",
+    "jws"
+   ],
+   "ids": [
+    "CVE-2026-96760",
+    "GHSA-6v38-4h7w-rj9h"
+   ],
+   "playbook": "advisory-fleet-triage",
+   "updated": "2026-11-21"
+  },
+  {
    "path": "advisories/kev-recent.md",
    "type": "feed-snapshot",
    "title": "CISA KEV: entries added in the last 14 days",
@@ -237,6 +259,14 @@
    "status": "evolving"
   },
   {
+   "path": "concepts/cra-reporting-clock.md",
+   "type": "concept",
+   "title": "The CRA reporting clock",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
    "path": "concepts/patching-and-exploit-speed.md",
    "type": "concept",
    "title": "Patching and exploit speed",
@@ -256,6 +286,14 @@
    "path": "concepts/prompt-injection-and-rule-of-two.md",
    "type": "concept",
    "title": "Prompt injection and the Rule of Two",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21",
+   "status": "evolving"
+  },
+  {
+   "path": "concepts/reachability-and-proof.md",
+   "type": "concept",
+   "title": "Reachability and proof",
    "updated": "2026-11-21",
    "reviewed": "2026-11-21",
    "status": "evolving"
@@ -317,6 +355,20 @@
     "locked out of an account"
    ],
    "severity": "high",
+   "updated": "2026-11-21",
+   "reviewed": "2026-11-21"
+  },
+  {
+   "path": "playbooks/advisory-fleet-triage.md",
+   "type": "playbook",
+   "title": "An advisory names a library our repositories use",
+   "signals": [
+    "new advisory for a library used across repositories",
+    "actively exploited vulnerability in a dependency",
+    "need to know which products are affected",
+    "24-hour early warning may be due"
+   ],
+   "severity": "critical",
    "updated": "2026-11-21",
    "reviewed": "2026-11-21"
   },
@@ -529,6 +581,17 @@
    "read": "via-report"
   },
   {
+   "path": "sources/european-commission-cra-reporting.md",
+   "type": "source",
+   "title": "Cyber Resilience Act: reporting obligations",
+   "publisher": "European Commission",
+   "url": "https://digital-strategy.ec.europa.eu/en/policies/cra-reporting",
+   "published": "2026-09-11",
+   "ingested": "2026-11-21",
+   "kind": "guidance",
+   "read": "full"
+  },
+  {
    "path": "sources/fido-passkey-index-2026.md",
    "type": "source",
    "title": "FIDO Alliance Passkey Index, October 2026",
@@ -661,6 +724,17 @@
    "read": "via-snippet"
   },
   {
+   "path": "sources/osv-authlib-ghsa-6v38-4h7w-rj9h.md",
+   "type": "source",
+   "title": "Authlib: empty signatures validation in JWS JSON deserialization (GHSA-6v38-4h7w-rj9h)",
+   "publisher": "GitHub Advisory Database, read through OSV",
+   "url": "https://osv.dev/vulnerability/GHSA-6v38-4h7w-rj9h",
+   "published": "2026-10-27",
+   "ingested": "2026-11-21",
+   "kind": "advisory",
+   "read": "full"
+  },
+  {
    "path": "sources/owasp-agentic-top-10-2026.md",
    "type": "source",
    "title": "OWASP Top 10 for Agentic Applications 2026",
@@ -771,6 +845,28 @@
    "read": "via-snippet"
   },
   {
+   "path": "sources/team-project-brief.md",
+   "type": "source",
+   "title": "24-hour vulnerability response with Le Chonk: project brief",
+   "publisher": "Project team",
+   "url": "https://github.com/KTKAW/MistralHackerthonNov26/blob/docs/system-design/PROJECT.md",
+   "published": "2026-11-21",
+   "ingested": "2026-11-21",
+   "kind": "design-doc",
+   "read": "full"
+  },
+  {
+   "path": "sources/team-system-design.md",
+   "type": "source",
+   "title": "le-chonk system design",
+   "publisher": "Project team",
+   "url": "https://github.com/KTKAW/MistralHackerthonNov26/blob/docs/system-design/docs/architecture.html",
+   "published": "2026-11-21",
+   "ingested": "2026-11-21",
+   "kind": "design-doc",
+   "read": "full"
+  },
+  {
    "path": "sources/techrepublic-bioshocking.md",
    "type": "source",
    "title": "TechRepublic on LayerX's BioShocking",
@@ -835,6 +931,14 @@
    "ingested": "2026-11-21",
    "kind": "article",
    "read": "via-snippet"
+  },
+  {
+   "path": "system.md",
+   "type": "reference",
+   "title": "System: the tool this knowledge base serves",
+   "updated": "2026-11-21",
+   "design_branch": "docs/system-design",
+   "design_commit": "c0211d4"
   }
  ]
 }

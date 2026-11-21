@@ -13,6 +13,7 @@ A wiki on cybersecurity and patches for people and small teams, written to be re
 | If you want | Open |
 |---|---|
 | The runbook for what just happened | "By signal" in [index.md](index.md) |
+| The system this serves, with diagrams | [system.md](system.md) |
 | The big picture in five minutes | [overview.md](overview.md) |
 | Live patch data and how to query it | [feeds.md](feeds.md) |
 | What a term means here | [glossary.md](glossary.md) |
@@ -43,6 +44,7 @@ https://raw.githubusercontent.com/KTKAW/MistralHackerthonNov26/knowledge/manifes
 AGENTS.md      rules for agents that read or write here (CLAUDE.md imports it)
 index.md       routing by signal and by decision, then every page in one line
 manifest.json  every page with its frontmatter, generated
+system.md      the tool this serves: pipeline, diagrams, verdict file
 overview.md    the threat picture, what works, thin evidence, gaps
 glossary.md    the shared vocabulary
 playbooks/     one runbook per kind of incident
@@ -60,11 +62,11 @@ This is the LLM wiki pattern: sources, a wiki that agents own, and a schema file
 
 ## What is in it
 
-Seeded on 21 November 2026 from one research report on cybersecurity for people and small teams: 39 source notes, 9 concept pages, 7 playbooks and 11 advisory records. Added to that, a generated snapshot of the vulnerabilities CISA added to its exploited list in the previous 14 days.
+Seeded on 21 November 2026 from one research report on cybersecurity for people and small teams. The team's system design was ingested the same day, with the European Commission's page on CRA reporting and the advisory for the flaw the tool was tested on. In all: 43 source notes, 11 concept pages, 8 playbooks and 12 advisory records, plus a generated snapshot of the vulnerabilities CISA added to its exploited list in the previous 14 days.
 
 ## What to keep in mind
 
-- **Almost everything is second-hand.** Only the research report and the CISA feed were read directly. Every other source note is marked `via-report` or `via-snippet`, and none of the originals has been re-read. Check a figure against its original before you rely on it.
+- **Most of it is second-hand.** Six sources were read directly: the research report, the team's two design documents, the Commission's page on CRA reporting, one advisory record and the CISA feed. Every other source note is marked `via-report` or `via-snippet`, and none of those originals has been re-read. Check a figure against its original before you rely on it.
 - **Some runbook steps have no source yet.** They are standard practice and are tagged *(baseline)*.
 - **A model wrote this**, from a report that a model helped to write.
 - **UK only** where it names phone numbers and reporting services.

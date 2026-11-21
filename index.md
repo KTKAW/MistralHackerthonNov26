@@ -10,6 +10,7 @@ Read this first. "By signal" goes from what happened to the playbook to follow. 
 ## Start here
 
 - [Overview](overview.md) — the threat picture in late 2026, what works, where the evidence is thin, and what this knowledge base does not cover.
+- [System](system.md) — the tool this knowledge base serves: its pipeline, two diagrams, the verdict file, and where the knowledge base plugs in.
 - [Glossary](glossary.md) — the shared vocabulary, one line per term.
 - [Feeds](feeds.md) — where live patch and advisory data comes from, with tested queries and an order of triage.
 - [AGENTS.md](AGENTS.md) — the rules for agents that read or write here, including how to behave during an incident.
@@ -18,18 +19,21 @@ Read this first. "By signal" goes from what happened to the playbook to follow. 
 
 What happened? Open the playbook on the same line.
 
+- A vulnerability is announced in a library that several of our repositories use, and we need to know which are affected. → [An advisory names a library our repositories use](playbooks/advisory-fleet-triage.md)
 - Someone pasted or ran a command that a web page, pop-up, ad or shared chat gave them. → [Someone pasted a command from a web page](playbooks/pasted-command.md)
 - A key, token, password or `.env` file is exposed, or an account shows spend nobody recognises. → [A key or token is exposed](playbooks/leaked-secret.md)
 - A package we installed is flagged as malicious, or our own package has versions we did not publish. → [A malicious package was installed](playbooks/malicious-dependency.md)
 - An agent did something nobody asked for, or a skill or MCP server turns out to be malicious. → [An agent did something it was not asked to do](playbooks/agent-hijack.md)
 - Someone typed a password or code into a doubtful page, approved a sign-in they did not start, or is locked out. → [An account may be taken over](playbooks/account-phish.md)
 - A call, voice message or text asks for money or bank details, or money has been sent. → [A call or message asks for money](playbooks/payment-or-voice-scam.md)
-- An advisory, a CVE or an emergency patch names something we run. → [An exploited vulnerability touches your stack](playbooks/exploited-vulnerability.md)
+- An advisory, a CVE or an emergency patch names one product, device or service we run. → [An exploited vulnerability touches your stack](playbooks/exploited-vulnerability.md)
 
 If none of these fits, say that the knowledge base does not cover it. Offer the order every playbook shares (contain, scope, recover, report) and label it as not specific to the case.
 
 ## By decision
 
+- Is a repository really affected by a library's flaw, and how do we show it? [Reachability and proof](concepts/reachability-and-proof.md)
+- What must be reported after an exploited vulnerability, to whom, and by when? [The CRA reporting clock](concepts/cra-reporting-clock.md)
 - How should people sign in? [Phishing-resistant sign-in](concepts/phishing-resistant-sign-in.md)
 - How fast must we patch, and what first? [Patching and exploit speed](concepts/patching-and-exploit-speed.md), then [Feeds](feeds.md)
 - How do we install dependencies safely? [Supply chain and dependency cooldown](concepts/supply-chain-and-dependency-cooldown.md)
@@ -44,6 +48,7 @@ If none of these fits, say that the knowledge base does not cover it. Offer the 
 
 Each has the same sections: ask first, contain, scope, recover, report, prevent the repeat, agent boundaries, precedents.
 
+- [An advisory names a library our repositories use](playbooks/advisory-fleet-triage.md) — which repositories are affected, with proof, and the report that follows. The run the team's tool automates.
 - [Someone pasted a command from a web page](playbooks/pasted-command.md) — ClickFix and fake install guides.
 - [A key or token is exposed](playbooks/leaked-secret.md) — committed, pasted, logged or scanned secrets.
 - [A malicious package was installed](playbooks/malicious-dependency.md) — npm worms and poisoned releases.
@@ -54,6 +59,8 @@ Each has the same sections: ask first, contain, scope, recover, report, prevent 
 
 ## Concepts
 
+- [Reachability and proof](concepts/reachability-and-proof.md) — when a repository is really affected, proof by test, the four verdicts, the gate.
+- [The CRA reporting clock](concepts/cra-reporting-clock.md) — the EU's 24-hour, 72-hour and 14-day reporting deadlines.
 - [ClickFix and pasted commands](concepts/clickfix.md) — the lure that makes the victim run the attacker's code.
 - [Social engineering and verification](concepts/social-engineering-and-verification.md) — lures off email, cloned voices, safe words, calling back.
 - [Phishing-resistant sign-in](concepts/phishing-resistant-sign-in.md) — passkeys, hardware keys, device-code phishing.
@@ -71,6 +78,7 @@ Things that happened or were disclosed, newest first. Each names what it affects
 - [CISA KEV: recent entries](advisories/kev-recent.md) — a generated snapshot of vulnerabilities being exploited now. Refresh with `python3 tools/kev.py`.
 
 <!-- advisories:start -->
+- 2026-10-27 · [Authlib accepts a JWS with no signatures (CVE-2026-96760)](advisories/2026-10-authlib-cve-2026-96760.md) · vulnerability, demonstrated · playbook: [advisory-fleet-triage](playbooks/advisory-fleet-triage.md)
 - 2026-09 · [Stolen AI keys, bulk token theft and fake Claude resellers](advisories/2026-09-stolen-ai-keys-and-fake-resellers.md) · campaign, in-the-wild · playbook: [leaked-secret](playbooks/leaked-secret.md)
 - 2026-09 · [Device-code phishing against cloud email](advisories/2026-09-device-code-phishing-cloud-email.md) · campaign, in-the-wild · playbook: [account-phish](playbooks/account-phish.md)
 - 2026-09 · [ClickFix lures dressed as AI-tool install guides](advisories/2026-09-clickfix-ai-tool-lures.md) · campaign, in-the-wild · playbook: [pasted-command](playbooks/pasted-command.md)
@@ -89,11 +97,15 @@ Things that happened or were disclosed, newest first. Each names what it affects
 One note per source, newest first, undated last. The read level says how each was read: see [AGENTS.md](AGENTS.md).
 
 <!-- sources:start -->
+- 2026-11-21 · [le-chonk system design](sources/team-system-design.md) · Project team · read: full
+- 2026-11-21 · [24-hour vulnerability response with Le Chonk: project brief](sources/team-project-brief.md) · Project team · read: full
 - 2026-11-21 · [Cybersecurity in late 2026: AI workflows for personal and small-team protection](sources/research-report-2026-11.md) · Team research report · read: full
+- 2026-10-27 · [Authlib: empty signatures validation in JWS JSON deserialization (GHSA-6v38-4h7w-rj9h)](sources/osv-authlib-ghsa-6v38-4h7w-rj9h.md) · GitHub Advisory Database, read through OSV · read: full
 - 2026-10-24 · [Fortune on AI voice-cloning scams and safe words](sources/fortune-voice-cloning-safe-word.md) · Fortune · read: via-snippet
 - 2026-10-02 · [Microsoft Digital Defense Report 2026, as reported by Help Net Security](sources/microsoft-digital-defense-report-2026.md) · Help Net Security · read: via-report
 - 2026-10 · [FIDO Alliance Passkey Index, October 2026](sources/fido-passkey-index-2026.md) · FIDO Alliance · read: via-snippet
 - 2026-09-23 · [The state of ClickFix by detection data](sources/push-security-state-of-clickfix.md) · Push Security · read: via-report
+- 2026-09-11 · [Cyber Resilience Act: reporting obligations](sources/european-commission-cra-reporting.md) · European Commission · read: full
 - 2026-09 · [Detecting and countering misuse of AI: September 2026](sources/anthropic-threat-intelligence-2026-09.md) · Anthropic · read: via-report
 - 2026-07-08 · [GenAI and agentic AI exploit round-up, Q2 2026](sources/owasp-genai-exploit-roundup-2026-q2.md) · OWASP GenAI Security Project · read: via-snippet
 - 2026-05-22 · [Project Glasswing: an initial update](sources/anthropic-glasswing-update.md) · Anthropic · read: via-report

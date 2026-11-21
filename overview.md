@@ -6,7 +6,11 @@ updated: 2026-11-21
 
 # Overview
 
-What the sources say, on one page. Everything here comes from one research report and the pages it cites, so read "Where the evidence is thin" and "Gaps" before leaning on it.
+What the sources say, on one page. Apart from the section on the team's own system, everything here comes from one research report and the pages it cites, so read "Where the evidence is thin" and "Gaps" before leaning on it.
+
+## The system this serves
+
+The team's tool takes one security advisory, sends an agent into each repository, and returns a verdict per repository with a test as proof. It ends with a draft of the 24-hour regulatory early warning, which a person approves. [Project brief, Nov 2026](sources/team-project-brief.md) The design, its diagrams and the places where this knowledge base plugs in are on [System](system.md). The pages closest to it are [Reachability and proof](concepts/reachability-and-proof.md), [The CRA reporting clock](concepts/cra-reporting-clock.md) and the playbook [An advisory names a library our repositories use](playbooks/advisory-fleet-triage.md).
 
 ## The picture
 
@@ -81,9 +85,10 @@ The research report's ten picks, each with the page that covers it. [Research re
 
 ## Gaps in this knowledge base
 
-- **Second-hand sources.** Apart from the research report and the KEV feed, no original has been read for this knowledge base. Every other note is `via-report` or `via-snippet`.
+- **Second-hand sources.** Six notes were read directly: the research report, the team's two design documents, the Commission's page on CRA reporting, one advisory record and the KEV feed. Every other note is `via-report` or `via-snippet`.
 - **Baseline steps.** Many playbook steps are standard practice with no source note behind them yet. They are tagged *(baseline)*.
 - **Fix status.** No curated advisory says whether a vendor fix shipped.
 - **UK only** for phone numbers and reporting routes.
-- **Not covered:** ransomware response, lost or stolen devices, cloud misconfiguration, legal duties after a breach.
+- **Not covered:** ransomware response, lost or stolen devices, cloud misconfiguration, and legal duties beyond the CRA's reporting deadlines.
+- **The system's evidence is small.** Two runs on one flaw, reported by the team that built it.
 - **One selection.** The seed is one report's choice of sources, and it leans on reports from Anthropic and Microsoft.

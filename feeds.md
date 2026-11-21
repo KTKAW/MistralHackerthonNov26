@@ -35,6 +35,12 @@ Is a package version vulnerable or malicious?
 curl -s https://api.osv.dev/v1/query -d '{"package":{"name":"lodash","ecosystem":"npm"},"version":"4.17.20"}'
 ```
 
+The same for a Python package. On 21 November 2026 this returned 8 GitHub advisories for Authlib 1.8.0, among them the flaw the team's tool was tested on. [Authlib advisory, Oct 2026](sources/osv-authlib-ghsa-6v38-4h7w-rj9h.md)
+
+```bash
+curl -s https://api.osv.dev/v1/query -d '{"package":{"name":"authlib","ecosystem":"PyPI"},"version":"1.8.0"}'
+```
+
 Many packages in one request, for a whole lockfile. Results come back in the order asked, with ids only:
 
 ```bash
@@ -63,7 +69,7 @@ curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2021-44228"
 curl -s "https://api.first.org/data/v1/epss?cve=CVE-2021-44228"
 ```
 
-GitHub allows 60 requests an hour without a token. If an agent is given a token for this, it should be a token that can read public data and nothing else.
+GitHub allows 60 requests an hour without a token, counted per network address. On a shared network other people use that allowance up: on 21 November 2026 it was already spent where this page was written, while OSV still answered. Ask OSV first. If an agent is given a token for this, it should be a token that can read public data and nothing else.
 
 ## Order of triage
 

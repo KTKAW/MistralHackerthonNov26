@@ -36,3 +36,34 @@ Structure, schema (`AGENTS.md`), `tools/lint.py` and `tools/kev.py`.
 - `advisories/kev-recent.md` generated from CISA KEV catalog version 2026.11.20: 21 entries added in the previous 14 days.
 - Every address and query in `feeds.md` was tried on this date and answered as described.
 - `tools/lint.py --sync` passes with no errors and no warnings. A planted wrong date and wrong figure were both caught before being removed.
+
+## [2026-11-21] ingest | System design from the docs/system-design branch
+
+- AGENTS.md
+- README.md
+- feeds.md
+- glossary.md
+- index.md
+- manifest.json
+- overview.md
+- system.md
+- watchlist.md
+- advisories/2026-10-authlib-cve-2026-96760.md
+- concepts/cra-reporting-clock.md
+- concepts/patching-and-exploit-speed.md
+- concepts/reachability-and-proof.md
+- playbooks/advisory-fleet-triage.md
+- playbooks/exploited-vulnerability.md
+- sources/european-commission-cra-reporting.md
+- sources/osv-authlib-ghsa-6v38-4h7w-rj9h.md
+- sources/team-project-brief.md
+- sources/team-system-design.md
+- tools/lint.py
+
+The team's project brief and architecture page, read in full at commit `c0211d4` of `docs/system-design`.
+
+- New: `system.md` with two diagrams (the system with the knowledge base attached; one worker's run), the concept pages on reachability and proof and on the CRA reporting clock (with a third diagram), the playbook for fleet triage, and an advisory record for CVE-2026-96760.
+- Four source notes, all read directly: the brief, the design, the European Commission's page on CRA reporting (read by a reader agent, one pass), and the advisory's record in OSV.
+- The diagrams were rendered locally with Mermaid 10.6.1 and looked at before this entry was written.
+- Found while checking the test flaw against the feeds: OSV lists 8 advisories for Authlib 1.8.0, and 2 of them are fixed only in 1.9.1; the flaw is not in CISA's catalog at version 2026.11.20. Both are recorded on `system.md` and in the advisory.
+- The links from the knowledge base into the system are a proposal by this knowledge base. They are not in the team's design.
