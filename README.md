@@ -7,7 +7,7 @@ Built at "Le Chonk in London", the Mistral Vibe hackathon, on 21 November 2026.
 ![The page after a run on the eleven demo apps: two affected and fixed, eight with no reachable path found, one for a person](docs/img/grid.png)
 
 > [!NOTE]
-> **Status on this branch, 21 November 2026.** The workflow, the advisory reader, the gate, the draft pull requests, the report and the page all run for real. The per-repository agent here is a stand-in that reads its answers from a file, and the page says so in the red banner above. The real agent (Vibe in a sandbox) is on `build/track-a-sandbox-worker` and has not yet run across this fleet. See [What is real today](#what-is-real-today).
+> **Status on this branch, 21 November 2026.** The workflow, the advisory reader, the gate, the draft pull requests, the report and the page all run for real. The per-repository agent (Vibe in a sandbox) is on this branch in `worker/` and `sandbox/`, built from the design and tested up to the model call. It has not yet run with a model, on one repository or across the fleet. Every run so far used a stand-in that reads its answers from a file, and the page says so in the red banner above. See [What is real today](#what-is-real-today).
 
 ## The problem
 
@@ -105,7 +105,7 @@ To show the gate catching a false claim, start the local run with `LE_CHONK_STUB
 |---|---|---|
 | **Mistral Workflows** (`mistralai-workflows` 3.20.0) | The whole run is one workflow, `le_chonk_run`, with seven activities. Mistral hosts the coordinator and our worker runs every step on our own machine. It gives the parallel fan-out, the pause for a person's `approve` signal, and a run that outlives a worker crash | Ran on the hosted service |
 | **Large 4** (`mistral-large-4-0`) | Reads the advisory into four checked facts | Live |
-| **Vibe 3.1.3, headless, in a sandbox** | The per-repository agent | Built on `build/track-a-sandbox-worker`. A stand-in here |
+| **Vibe 3.1.3, headless, in a sandbox** | The per-repository agent | `worker/` and `sandbox/` on this branch, tested without a model. Not yet run with one |
 
 Every step runs on our own machine, so the repositories, the tests and the fixes stay there. What reaches Mistral is the model calls and the workflow's own record of each step, which includes the verdicts. The plain-Python orchestrator in `orchestrator/local.py` keeps that record local too. The tool's only other outbound requests are the OSV lookup, which sends the identifier alone, and the draft pull requests, which are off unless switched on.
 
@@ -113,7 +113,7 @@ Every step runs on our own machine, so the repositories, the tests and the fixes
 
 | What | Result | Measured on |
 |---|---|---|
-| Tests | 84 pass in about 140 s | This branch, eleven apps, stand-in worker |
+| Tests | 191 pass in about 200 s | This branch, eleven apps. The worker and the sandbox are tested with a scripted program in place of the model |
 | Fan-out | Five repository activities started within 234 ms | Hosted Workflows |
 | Advisory to "waiting for a person" | 21 s on five apps. For the three November advisories, typing only the identifier: 41 s and 136 s on ten apps, 94 s on eleven. The 136 s was mostly the one model call | Hosted Workflows, stand-in worker |
 | Worker killed with eight activities in flight | The run stayed `RUNNING` and no finished step was repeated. 56 s later the eight in-flight repositories went to "needs a human" | Hosted Workflows, an earlier eight-service fleet |
@@ -134,8 +134,8 @@ How each number was taken, and what was not checked, is in [docs/BUILD-LOG.md](d
 
 **A stand-in**
 
-- **The per-repository agent.** On this branch each "agent" looks its answer up in `orchestrator/stub_answers.json`. The page and the pull requests both say so. The real worker plugs in through `LE_CHONK_RUN_REPO`, which defaults to track A's `worker.run_repo:run_repo`.
-- **The sandbox for the gate's test runs.** With the stand-in, the gate ran the proof tests outside it. Without the stand-in switch the gate refuses to run agent-written tests unsandboxed.
+- **The per-repository agent, in every run so far.** With `LE_CHONK_RUN_REPO=orchestrator.stub_agent:run_repo` each "agent" looks its answer up in `orchestrator/stub_answers.json`. The page and the pull requests both say so. Without that variable a run starts the real worker, `worker.run_repo:run_repo`, which needs a Vibe home and a Mistral key: see [docs/AGENT.md](docs/AGENT.md).
+- **The sandbox, in the demo runs.** Those runs set `LE_CHONK_ALLOW_UNSANDBOXED=1`, so the gate ran the proof tests outside it. `sandbox/douane` is on this branch now, and the tests run the gate through it. Without the switch the gate refuses to run agent-written tests unsandboxed.
 
 **Not known yet**
 
@@ -225,6 +225,9 @@ uv run pytest
 | [orchestrator/report.py](orchestrator/report.py) | The draft early warning. No model |
 | [orchestrator/pull_request.py](orchestrator/pull_request.py) | A draft pull request for each verified fix |
 | [orchestrator/local.py](orchestrator/local.py) | The same run in plain Python, for when Workflows is not available |
+| [worker/](worker/) | The per-repository agent: one headless Vibe on a fresh copy of one repository, and its prompt |
+| [sandbox/](sandbox/) | The wrapper every shell command and every gate test run goes through, its rules, and the two Vibe hooks |
+| [docs/AGENT.md](docs/AGENT.md) | How to set the agent up, what the sandbox allows, what was verified and what was not |
 | [orchestrator/stub_agent.py](orchestrator/stub_agent.py) | The stand-in for the per-repository agent |
 | [orchestrator/fleet.json](orchestrator/fleet.json) | The eleven apps, pinned by commit |
 | [web/](web/) | The page: the grid, the live activity stream and the per-repository inspector |

@@ -7,12 +7,13 @@ import json
 import shutil
 import stat
 import subprocess
+import sys
 
 import pytest
 
 from orchestrator import config, gate, stub_agent
 from orchestrator.gate import gate_repo
-from orchestrator.tests.conftest import AUTHLIB, WHEELHOUSE, needs_fleet, write_advisory
+from orchestrator.tests.conftest import AUTHLIB, REPO_ROOT, WHEELHOUSE, needs_fleet, write_advisory
 from vulnerability_agent import schemas
 
 pytestmark = needs_fleet
@@ -207,6 +208,25 @@ def test_agent_tests_go_through_the_sandbox_wrapper(pipeline, run_id, monkeypatc
     workdirs = set(calls.read_text().split())
     gate_dir = config.run_dir(run_id) / "auth-gateway" / "gate"
     assert workdirs == {str(gate_dir / "vulnerable"), str(gate_dir / "fixed")}
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or not (REPO_ROOT / "sandbox" / "douane").is_file(), reason="needs macOS and sandbox/douane")
+def test_the_gate_runs_agent_tests_inside_the_real_sandbox(pipeline, run_id, monkeypatch):
+    """No stand-in for the wrapper and no waiver: the proofs and the repository's tests run under sandbox-exec."""
+    monkeypatch.setenv("LE_CHONK_SANDBOX", str(REPO_ROOT / "sandbox" / "douane"))
+    monkeypatch.delenv("LE_CHONK_ALLOW_UNSANDBOXED")
+    claim(run_id, "billing-api")
+    result = gated(run_id, "billing-api")
+    assert result["verdict"] == "affected_fixed" and result["gate"]["passed"] is True, result["gate"]["rules"]
+    assert result["gate"]["sandboxed"] is True and "proofs_ran_in_sandbox" in result["gate"]["rules"]
+    assert result["gate"]["rules"]["no_test_pass_to_fail_between_baselines"]["detail"] == "9 passed / 0 failed on vulnerable, 9 passed / 0 failed on fixed"
+    gate_dir = config.run_dir(run_id) / "billing-api" / "gate"
+    assert not (gate_dir / "vulnerable" / ".sandbox").exists() and not (gate_dir / "fixed" / "venv").exists()
+    # A proof that tries to reach the network fails inside the sandbox, on both baselines, so it proves nothing.
+    proof = config.run_dir(run_id) / "billing-api" / "proof" / "test_proof_cve_2026_96760.py"
+    proof.write_text("import socket\n\ndef test_forged_token_is_rejected():\n    socket.create_connection(('1.1.1.1', 53), timeout=3).close()\n")
+    blocked = gated(run_id, "billing-api")
+    assert blocked["verdict"] == "needs_human" and "proof_passes_on_fixed" in failed_rules(blocked)
 
 
 def test_the_gate_never_upgrades(pipeline, run_id):

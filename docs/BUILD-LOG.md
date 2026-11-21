@@ -457,3 +457,65 @@ real agent.
 
 Not done from the spec: replay of a saved run from `fixtures/`, and killing orphaned Vibe
 processes when a worker dies.
+
+### The per-repository agent, built from the design (21 November)
+
+`worker/` and `sandbox/` are new on this branch. They were written from the design branch's
+tickets 03 and 06 and the run contract, not ported from `build/base`. `docs/AGENT.md` has the
+details: setup, the hook protocol with its source files in Vibe 3.1.3, every Vibe tool and how
+it is handled, and what the sandbox allows.
+
+| File | What it is |
+|---|---|
+| `worker/run_repo.py` | One headless Vibe on a fresh copy of one repository, in the contract's layout: `src/`, `proof/`, `venv/` |
+| `worker/prompt.md` | What the agent is told: the three rules, the six stages, the exact shape of `verdict.json` |
+| `worker/setup_vibe_home.py` | Builds `vibe-home/`: Vibe 3.1.3 in its own environment, both hooks, four tools. Never touches a key |
+| `worker/vibe_child.py` | Stops Vibe if the worker process dies, so no agent is orphaned |
+| `sandbox/douane`, `sandbox/profile.sb.template` | The wrapper and its Seatbelt rules: no network, writes only in the run folder, no file contents from home folders or shared temp folders |
+| `sandbox/sandbox2.py`, `sandbox/path_hook.py` | The two strict Vibe hooks: shell commands through the wrapper; file tools limited to `src/`, `proof/` and `verdict.json` |
+
+Where it departs from the design page, and why:
+
+1. **No `--trust`.** With it, a `.vibe/hooks.toml` in the work folder replaced the home's hook of
+   the same name, and an `AGENTS.md` from the repository reached the model. Tried with the real
+   Vibe 3.1.3. The worker also refuses to start if the Vibe home trusts the run folder.
+2. **Four tools by name**, not two web tools switched off. Vibe 3.1.3 still offers
+   `run_typescript`, `search_tool_functions` and `skill` after that. Tool calls made from a
+   `run_typescript` program go through the hooks like any other, and the path hook refuses every
+   tool it has no rule for.
+3. **The working directory is the repo-run root**, not `src/`, because the contract puts
+   `proof/` and `verdict.json` beside `src/`.
+4. **Reads are limited too.** The design blocks `.env`, `secrets/`, the answer key and other
+   repositories' run folders. This profile takes away file contents under home folders,
+   `/private/tmp`, `/private/var/folders` and `/Volumes`, except the run folder, the wheelhouse
+   and the Python install. A narrow allow-list of reads aborts the child on macOS 26.5, so names
+   and attributes stay readable everywhere.
+5. **The prompt adds two things**: write `verdict.json` as soon as the verdict is decided, and a
+   flaw that needs a setting which is off by default is "needs a human".
+
+Checked, all without a model:
+
+- **65 tests for the sandbox and the worker.** Through the real `sandbox-exec`: no network, no
+  write outside the run folder or to `/tmp`, no read of `.env`, `secrets/`, the Vibe home or a
+  denied path, a clean environment, an offline install from the wheelhouse, and the contract's
+  pinned `venv/bin/python -m pytest proof/ -q`.
+- **The real Vibe 3.1.3 with a scripted model**: every shell command it started went through the
+  wrapper, including one started from a `run_typescript` program; refused file-tool calls stayed
+  refused; a planted `AGENTS.md` and `.vibe/hooks.toml` were not picked up.
+- **Worker, sandbox and gate together** (`orchestrator/tests/test_real_worker.py`): with a
+  scripted program in place of `vibe`, a fix from the real worker passed the gate with the gate's
+  own test runs under `sandbox-exec` and no waiver, and the worker's `venv/` passed the gate's
+  library check. A worker that edited its installed library went to a person on that rule alone.
+- **191 tests pass in all.**
+
+Not checked: anything a model does. There was no Mistral key on the machine this was written on,
+so no agent has read a repository, written a proof or finished inside the 560 seconds. Also not
+checked: ten agents at once, and the web connector tools with a key present.
+
+To run one real agent by hand, with a key in the environment. `runs/<run id>/advisory.json` must
+hold the five facts first; starting a run from the page writes it.
+
+```sh
+uv run python -m worker.setup_vibe_home
+uv run python -m worker.run_repo <run id> <repository> --fleet-root runs/_fleet
+```

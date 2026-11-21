@@ -329,6 +329,7 @@ def _check_affected(rules: _Rules, claim: dict, advisory: dict, diff: dict[str, 
     finally:
         for baseline in ("vulnerable", "fixed"):  # the environments are large and rebuilt every time
             shutil.rmtree(gate_dir / baseline / contract.VENV_DIR, ignore_errors=True)
+            shutil.rmtree(gate_dir / baseline / ".sandbox", ignore_errors=True)  # the wrapper's own HOME, temp folder and cache
         log.close()
 
 
