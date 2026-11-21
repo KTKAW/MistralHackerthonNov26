@@ -2,7 +2,7 @@
 
     POST /runs {advisory_text}        start a run; returns {run_id, started_at}
     GET  /runs/{run_id}               tiles, only for repositories the gate has been through
-    GET  /                            the page: polls every 2 s, shows the 24-hour clock
+    GET  /                            the page: polls every 2 s
     POST /runs/{run_id}/approve       a person's approval, sent to the run as the "approve" signal
     GET  /runs/{run_id}/stream        the run's events as they happen (server-sent events)
     GET  /runs/{run_id}/events        the same events, as JSON
