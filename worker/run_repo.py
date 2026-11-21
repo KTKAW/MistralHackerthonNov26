@@ -193,5 +193,8 @@ if __name__ == "__main__":
     run_id = sys.argv[1] if len(sys.argv) > 1 else "selftest"
     repo = sys.argv[2] if len(sys.argv) > 2 else "selftest"
     result = run_repo(run_id, repo)
-    print(json.dumps({"repo": result["repo"], "rc": result["rc"],
-                      "verdict": result["verdict"].get("verdict")}, indent=2))
+    try:
+        print(json.dumps({"repo": result["repo"], "rc": result["rc"],
+                          "verdict": result["verdict"].get("verdict")}, indent=2))
+    except (BrokenPipeError, OSError):
+        pass
