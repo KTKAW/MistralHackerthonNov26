@@ -230,3 +230,43 @@ def test_when_the_lookup_fails_the_person_is_told_what_is_missing(pipeline, run_
     with pytest.raises(ValueError, match="does not say the affected versions, the fixed version, the flawed function. Paste the whole advisory, or its CVE or GHSA identifier"):
         advisory.read_advisory(run_id, "Authlib, CVE-2026-96760", lambda text, kind="step": said.append((kind, text)))
     assert said[-1] == ("fail", "Looking CVE-2026-96760 up at OSV failed (OSError). Going on with the typed text alone.")
+
+
+# ---------------------------------------------------------------- a link instead of an advisory
+
+@pytest.mark.parametrize("link, wanted, host", [
+    ("https://nvd.nist.gov/vuln/detail/cve-2026-129300", "CVE-2026-129300", "nvd.nist.gov"),
+    ("  https://nvd.nist.gov/vuln/detail/CVE-2026-129300\n", "CVE-2026-129300", "nvd.nist.gov"),
+    ("https://www.cve.org/CVERecord?id=CVE-2026-96760", "CVE-2026-96760", "www.cve.org"),
+    ("https://github.com/advisories/GHSA-6v38-4h7w-rj9h", "GHSA-6v38-4h7w-rj9h", "github.com"),
+    ("https://github.com/authlib/authlib/security/advisories/ghsa-6V38-4H7W-RJ9H", "GHSA-6v38-4h7w-rj9h", "github.com"),
+    ("https://osv.dev/vulnerability/GHSA-xhrq-2mqv-q8wx", "GHSA-xhrq-2mqv-q8wx", "osv.dev"),
+    ("https://nvd.nist.gov/vuln/detail/CVE-2026-126347?" + "utm_source=x&" * 40, "CVE-2026-126347", "nvd.nist.gov"),  # longer than LOOKUP_BELOW
+])
+def test_a_link_is_looked_up_by_the_identifier_in_it_and_never_opened(monkeypatch, link, wanted, host):
+    asked, said = [], []
+    monkeypatch.setenv("LE_CHONK_ADVISORY_LOOKUP", "1")
+    monkeypatch.setattr(advisory, "_fetch", lambda identifier: asked.append(identifier) or {"id": identifier})
+    found = advisory.look_up(link, lambda text, kind="step": said.append(text))
+    assert asked == [wanted] and found["records"] == [wanted]  # only the identifier goes out: the link is not opened
+    assert said[0] == f"The text is a link to {wanted} on {host}, not an advisory. The link is not opened. Looking {wanted} up at OSV. Only the identifier is sent."
+
+
+def test_an_nvd_link_is_read_like_the_identifier_alone(pipeline, run_id, monkeypatch):
+    read = []
+    monkeypatch.delenv("LE_CHONK_ADVISORY_JSON")
+    monkeypatch.setenv("LE_CHONK_ADVISORY_LOOKUP", "1")
+    monkeypatch.setattr(advisory, "_fetch", lambda identifier: {"CVE-2026-96760": CVE_RECORD, "GHSA-6v38-4h7w-rj9h": GHSA_RECORD}[identifier])
+    monkeypatch.setattr(advisory, "_one_model_call", lambda text: read.append(text) or json.dumps({**GOOD, "flawed_function": "JsonWebSignature.deserialize_json"}))
+    facts = advisory.read_advisory(run_id, "https://nvd.nist.gov/vuln/detail/cve-2026-96760", lambda *args, **kwargs: None)
+    assert facts["advisory_id"] == "CVE-2026-96760" and facts["affected_version_range"] == "<1.9.0" and facts["fixed_version"] == "1.9.0" and len(read) == 1
+    assert [item["id"] for item in advisory.looked_up(run_id)] == ["CVE-2026-96760", "GHSA-6v38-4h7w-rj9h"]
+
+
+def test_a_link_with_no_identifier_stops_the_run_before_the_model_call(pipeline, run_id, monkeypatch):
+    monkeypatch.delenv("LE_CHONK_ADVISORY_JSON")
+    monkeypatch.setenv("LE_CHONK_ADVISORY_LOOKUP", "1")
+    monkeypatch.setattr(advisory, "_fetch", lambda identifier: pytest.fail("there is no identifier to look up"))
+    monkeypatch.setattr(advisory, "_one_model_call", lambda text: pytest.fail("a link with no identifier must not reach the model"))
+    with pytest.raises(ValueError, match="the link names no CVE or GHSA identifier, and the tool does not open links"):
+        advisory.read_advisory(run_id, "https://example.com/blog/our-new-security-fix", lambda *args, **kwargs: None)

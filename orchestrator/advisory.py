@@ -10,6 +10,11 @@ in it is looked up at OSV (api.osv.dev), and the model reads the record that com
 the identifier is sent. The record is untrusted input like any other advisory text, and the
 facts must still be found in it. LE_CHONK_ADVISORY_LOOKUP=0 turns the lookup off.
 
+A link to an advisory, such as https://nvd.nist.gov/vuln/detail/CVE-2026-129300, is treated the
+same way: the identifier is taken from the link and looked up at OSV. The link itself is never
+opened, so it does not matter which site it points to. A link that names no identifier stops
+the run before the model call.
+
 For tests and for runs without a key, LE_CHONK_ADVISORY_JSON may name a file holding the five
 facts. No model is called then.
 
@@ -22,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -54,6 +60,7 @@ SOURCE_FILE = "advisory.source.json"
 
 IDENTIFIER = re.compile(r"\b(CVE-\d{4}-\d{4,7}|GHSA(?:-[23456789cfghjmpqrvwx]{4}){3})\b", re.I)
 LOOKUP_BELOW = 300  # characters: a shorter text with an identifier in it is an identifier, not an advisory
+LINK = re.compile(r"https?://\S{1,2000}", re.I)  # the whole text is one link, of any length
 OSV_RECORD = "https://api.osv.dev/v1/vulns/"
 OSV_PAGE = "https://osv.dev/vulnerability/"
 
@@ -71,6 +78,9 @@ def read_advisory(run_id: str, advisory_text: str, say: Callable[..., None] | No
         raw = Path(canned).read_text(encoding="utf-8")
         source = "file"
     else:
+        if LINK.fullmatch(advisory_text.strip()) and not IDENTIFIER.search(advisory_text):
+            raise ValueError("the link names no CVE or GHSA identifier, and the tool does not open links. "
+                             "Paste the advisory's text, its CVE or GHSA identifier, or a link that has the identifier in it.")
         text = advisory_text
         found = look_up(advisory_text, say)
         if found:
@@ -99,13 +109,21 @@ def looked_up(run_id: str) -> list[dict]:
 
 
 def look_up(advisory_text: str, say: Callable[..., None]) -> dict | None:
-    """Fetch the advisory from OSV when the text is little more than its identifier. None if not, or if it fails."""
+    """Fetch the advisory from OSV when the text is little more than its identifier, or a link that names it.
+
+    None if not, or if it fails. A link is never opened: only the identifier in it is used.
+    """
     text = advisory_text.strip()
     match = IDENTIFIER.search(text)
-    if os.environ.get("LE_CHONK_ADVISORY_LOOKUP", "1") == "0" or not match or len(text) >= LOOKUP_BELOW:
+    link = LINK.fullmatch(text)
+    if os.environ.get("LE_CHONK_ADVISORY_LOOKUP", "1") == "0" or not match or (len(text) >= LOOKUP_BELOW and not link):
         return None
     wanted = _canonical(match.group(1))
-    say(f"The text is an identifier, not an advisory. Looking {wanted} up at OSV. Only the identifier is sent.")
+    if link:
+        host = (urllib.parse.urlsplit(text).hostname or "?")[:80]
+        say(f"The text is a link to {wanted} on {host}, not an advisory. The link is not opened. Looking {wanted} up at OSV. Only the identifier is sent.")
+    else:
+        say(f"The text is an identifier, not an advisory. Looking {wanted} up at OSV. Only the identifier is sent.")
     try:
         records = [_fetch(wanted)]
     except Exception as error:
@@ -168,7 +186,7 @@ def check(raw: str) -> dict:
     missing = [name for name in FIELDS if not isinstance(data.get(name), str) or not data[name].strip()]
     if missing:
         raise ValueError("the advisory text does not say " + ", ".join(SAID_AS[name] for name in missing)
-                         + ". Paste the whole advisory, or its CVE or GHSA identifier alone so that it can be looked up. "
+                         + ". Paste the whole advisory, or its CVE or GHSA identifier alone (or a link that names it) so that it can be looked up. "
                          "The tool needs the package, the affected versions, the fixed version and the flawed function, and will not guess them.")
     facts = {}
     for name, pattern in FIELDS.items():

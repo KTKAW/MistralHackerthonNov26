@@ -240,13 +240,13 @@
 <main>
   <section>
     <div class="panel">
-      <h2>Security advisory <span class="hint">paste its text, or just its CVE or GHSA identifier</span>
+      <h2>Security advisory <span class="hint">paste its text, its CVE or GHSA identifier, or a link to it</span>
         <span class="run-status">
           <span class="mono muted" id="run-id"></span>
           <span class="pill" id="stage"><span class="dot"></span><span id="stage-text">no run yet</span></span>
         </span>
       </h2>
-      <textarea id="advisory" placeholder="Paste the advisory here. It has to name the package, the affected versions and the flawed function.&#10;&#10;Or type only its identifier, for example CVE-2026-96760, and it is looked up at OSV."></textarea>
+      <textarea id="advisory" placeholder="Paste the advisory here. It has to name the package, the affected versions and the flawed function.&#10;&#10;Or type only its identifier, for example CVE-2026-96760, or paste a link that names it, for example https://nvd.nist.gov/vuln/detail/CVE-2026-96760. It is looked up at OSV. The link itself is not opened."></textarea>
       <div class="actions">
         <button class="primary" id="start"><svg class="icon"><use href="#i-play"/></svg>Start run</button>
         <button class="quiet" id="demo" title="Fill in the advisory the demo fleet was built around">Fill in the demo advisory</button>
@@ -666,7 +666,7 @@ function renderDrawerBody() {
 // ---------------------------------------------------------------- wiring
 $("start").addEventListener("click", async () => {
   showError("");
-  if ($("advisory").value.trim().length < 10) { showError("Paste an advisory first, or type its CVE or GHSA identifier."); return; }
+  if ($("advisory").value.trim().length < 10) { showError("Paste an advisory first, type its CVE or GHSA identifier, or paste a link to it."); return; }
   try { const started = await api("/runs", { advisory_text: $("advisory").value }); runId = started.run_id; location.hash = started.run_id; openRun(started.run_id); }
   catch (error) { showError(error.message); }
 });

@@ -35,7 +35,7 @@ flowchart LR
     R --> H["A person approves<br/>within 24 hours"]
 ```
 
-1. **Read the advisory.** One call to `mistral-large-4-0` extracts five facts: the identifier, the package, the affected versions, the fixed version and the flawed function. Given only an identifier, the tool looks the record up at OSV first.
+1. **Read the advisory.** One call to `mistral-large-4-0` extracts five facts: the identifier, the package, the affected versions, the fixed version and the flawed function. Given only an identifier, or a link that names one such as `https://nvd.nist.gov/vuln/detail/CVE-2026-129300`, the tool looks the record up at OSV first. It never opens the link.
 2. **Fan out.** One agent per repository, all at once. Each gets a fresh copy of the repository.
 3. **Decide and prove.** If the flaw can be reached, the agent writes a test that sends a harmless forged or malformed input through the service's own entry point. If it cannot, the agent says why and cites the code path.
 4. **Fix.** The agent upgrades or patches. The proof test must now pass, and so must the tests that were already there.
