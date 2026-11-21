@@ -97,12 +97,57 @@ function renderDetail() {
       <div><b>douane coverage</b> ${c.douane_pct == null ? "—" : c.douane_pct + "%"}
            (${c.shell_calls} shell calls, ${c.deny_count} denied)</div>
     </div></div>
-    <div id="detail-sections"></div>`;
+    <div id="detail-sections">
+      <div class="panel"><h3>Hook audit — live tail of hook.log
+        <span class="chip" id="hook-live">connecting…</span></h3>
+        <table class="audit"><thead><tr>
+          <th>event</th><th>hook</th><th>command / path</th><th>detail</th>
+        </tr></thead><tbody id="hook-rows"></tbody></table>
+      </div>
+    </div>`;
+  startHookStream(d.run_id, d.repo);
+}
+
+/* ---------- live hook audit (SSE) ---------- */
+function startHookStream(run_id, repo) {
+  closeHookStream();
+  const url = `/api/runs/${encodeURIComponent(run_id)}/${encodeURIComponent(repo)}/hooklog`;
+  state.es = new EventSource(url);
+  state.es.onopen = () => { const el = $("#hook-live"); if (el) { el.textContent = "live"; el.className = "chip ok"; } };
+  state.es.onerror = () => { const el = $("#hook-live"); if (el) { el.textContent = "reconnecting…"; el.className = "chip bad"; } };
+  state.es.onmessage = (m) => {
+    let ev; try { ev = JSON.parse(m.data); } catch { return; }
+    addAuditRow(ev);
+  };
+}
+function closeHookStream() { if (state.es) { state.es.close(); state.es = null; } }
+
+function addAuditRow(ev) {
+  const tbody = $("#hook-rows");
+  if (!tbody) return;
+  const tr = document.createElement("tr");
+  tr.className = ev.event === "deny" ? "deny" : ev.event === "rewrite" ? "rewrite" : "";
+  let cmd = "", detail = "";
+  if (ev.event === "rewrite") {
+    cmd = `<span class="mono">${esc(ev.rewritten)}</span>
+           <span class="orig">was: ${esc(ev.original)}</span>`;
+    detail = esc(ev.tool || "");
+  } else if (ev.path) {
+    cmd = `<span class="mono">${esc(ev.path)}</span>`;
+    detail = esc(ev.tool || "");
+  } else {
+    cmd = `<span class="mono">${esc(ev.original || ev.command || "")}</span>`;
+    detail = esc(ev.reason || ev.detail || "");
+  }
+  tr.innerHTML = `<td>${esc(ev.event)}</td><td>${esc(ev.hook || "")}</td><td class="cmd">${cmd}</td><td>${detail}</td>`;
+  tbody.prepend(tr);
+  while (tbody.rows.length > 500) tbody.deleteRow(-1);
 }
 
 $("#btn-back").addEventListener("click", () => {
   $("#detail-view").classList.add("hidden");
   $("#runs-view").classList.remove("hidden");
+  closeHookStream();
   state.detail = null;
 });
 

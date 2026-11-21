@@ -12,14 +12,15 @@ Env:  LE_CHONK_RUNS_ROOT (default <repo>/runs)   — same var name as track C
 
 See worker/UI-PLAN.md for the full plan.
 """
+import asyncio
 import json
 import os
 import re
 import subprocess
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -199,6 +200,35 @@ def create_app(runs_root=None) -> FastAPI:
     @app.get("/api/runs/{run_id}/{repo}")
     def get_run(run_id: str, repo: str):
         return run_detail(app.state.runs_root, _safe_name(run_id), _safe_name(repo))
+
+    @app.get("/api/runs/{run_id}/{repo}/hooklog")
+    async def hooklog(run_id: str, repo: str, since: int = Query(0, ge=0)):
+        """SSE stream of hook.log lines from byte offset `since` (0 = whole file)."""
+        work = app.state.runs_root / _safe_name(run_id) / _safe_name(repo)
+        if not work.is_dir():
+            raise HTTPException(status_code=404, detail="no such run")
+        log = work / "hook.log"
+
+        async def gen():
+            pos = since
+            while True:
+                try:
+                    if log.is_file():
+                        data = log.read_bytes()
+                        if len(data) < pos:  # file was truncated (new run) — restart
+                            pos = 0
+                        if len(data) > pos:
+                            chunk = data[pos:]
+                            pos = len(data)
+                            for line in chunk.splitlines():
+                                if line.strip():
+                                    yield "data: " + line.decode("utf-8", "replace") + "\n\n"
+                except OSError:
+                    pass
+                await asyncio.sleep(1)
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache"})
 
     @app.get("/")
     def index():
