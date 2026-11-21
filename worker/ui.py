@@ -11,6 +11,9 @@ Env:  LE_CHONK_RUNS_ROOT (default <repo>/runs)   — same var name as track C
       LE_CHONK_UI_PORT   (default 8001; track C's grid owns 8000)
 
 See worker/UI-PLAN.md for the full plan.
+
+Start it with the project venv (auto re-execs if you use a bare python3):
+    .venv/bin/python worker/ui.py        # or just: python3 worker/ui.py
 """
 import asyncio
 import json
@@ -23,6 +26,36 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _ensure_deps():
+    """Re-exec into the project .venv when started with a bare interpreter.
+
+    fastapi/uvicorn live in .venv (installed offline from wheelhouse/), which
+    is gitignored — a system python3 has neither them nor pytest.
+    """
+    try:
+        import fastapi  # noqa: F401
+        return
+    except ImportError:
+        pass
+    venv_py = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python"
+    if venv_py.exists() and Path(sys.executable).resolve() != venv_py.resolve():
+        os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]])
+    sys.exit(
+        "fastapi/uvicorn are not installed for this interpreter "
+        f"({sys.executable}).\n"
+        "Run with the project venv:  .venv/bin/python worker/ui.py\n"
+        "If .venv is missing (fresh clone), create it offline:\n"
+        "  uv venv .venv --python 3.12 && "
+        "uv pip install --python .venv/bin/python --no-index --find-links wheelhouse "
+        "fastapi uvicorn httpx pytest jsonschema\n"
+        "(wheelhouse/ and .venv/ are gitignored, so a fresh clone needs them "
+        "copied from a machine that has them.)"
+    )
+
+
+_ensure_deps()
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
