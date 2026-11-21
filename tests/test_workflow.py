@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from datetime import timedelta
@@ -221,9 +222,26 @@ class TestGetRunRepo:
         assert result["repo"] == "svc-a"
 
     def test_no_stub_raises(self, monkeypatch):
+        # Simulate track A's worker/ not being merged: the import must fail.
+        monkeypatch.setitem(sys.modules, "worker", None)
+        monkeypatch.setitem(sys.modules, "worker.run_repo", None)
         monkeypatch.setattr(wf, "STUB_RUN_REPO", "")
-        with pytest.raises(RuntimeError, match="not merged yet"):
+        with pytest.raises(RuntimeError, match="no run_repo available"):
             wf.get_run_repo()
+
+    def test_worker_preferred_when_available(self, monkeypatch):
+        # When worker/ IS merged (track A on build/base) and stub mode is off,
+        # the real run_repo wins over any stub.
+        try:
+            import worker.run_repo  # noqa: F401
+        except Exception:
+            pytest.skip("worker/run_repo not merged in this checkout")
+        monkeypatch.setattr(wf, "STUBS", False)
+        monkeypatch.setattr(wf, "STUB_RUN_REPO", "")
+        fn, src = wf.get_run_repo()
+        assert src == "worker"
+        from worker.run_repo import run_repo
+        assert fn is run_repo
 
 
 # ================================================================ triage_one

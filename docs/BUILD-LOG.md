@@ -40,7 +40,8 @@ Branch: `build/track-c-orchestration-ui`. Owns `orchestrator/`, `web/`, `docs/BU
 - [x] C4 web/app.py — implemented; unit-tested in `tests/test_web_app.py`
 - [ ] C5 worker process — pending (needs DEPLOYMENT_NAME at venue)
 - [x] C6 stub test — `tests/test_workflow.py::TestRunLocal::test_full_local_run_with_stubs` drives the full local pipeline against /tmp stubs
-- [ ] C7 integration (blocked: tracks A/B not merged into build/base) — blocked
+- [ ] C7 integration (A/B merged into `build/base` @ 62c590c — blocker lifted; stub-precedence
+  fix applied, see 2026-11-21 note below) — pending real e2e run
 - [x] C8 fallback — implemented as `run_local` in workflow.py; exercised by C6
 
 ## Unit tests (2026-11-21)
@@ -67,3 +68,18 @@ Branch: `build/track-c-orchestration-ui`. Owns `orchestrator/`, `web/`, `docs/BU
     local-mode run dir creation), GET /runs/{id} (tiles only for gate-passed repos, reason
     truncated to 280 chars, tile fields), POST /runs/{id}/approve (local mode writes approved
     file + updates status), `_gate_ok` helper, `start_run` unit-level.
+
+## 2026-11-21 — post-merge fix: stub precedence in `get_run_repo()`
+
+Tracks A+B are merged into `build/base` (62c590c), so `from worker.run_repo import
+run_repo` now succeeds and the old worker-first precedence broke 4 stub-assumption
+tests in `tests/test_workflow.py` when run on the merged base
+(`test_stub_run_repo_loaded`, `test_no_stub_raises`, `test_calls_run_repo_with_heartbeat`,
+`test_full_local_run_with_stubs`). Fix: explicit stub mode (`LE_CHONK_STUBS=1` +
+`LE_CHONK_STUB_RUN_REPO=<file>`) now **wins over** the real worker — the C6 stub tests
+rely on that; worker-first applies only when stub mode is off. `test_no_stub_raises`
+now simulates the unmerged state via `sys.modules` and matches the new error message;
+added `test_worker_preferred_when_available` (runs only when worker/ is importable).
+Verified both worlds: C clone 139 passed + 1 skip; simulated merge (base 62c590c +
+orchestrator/+web/) 300 passed with 0 workflow failures (remaining 23 failures are the
+known environmental ones needing gitignored vibe-home/ + wheelhouse/).
