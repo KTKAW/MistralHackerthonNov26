@@ -2,16 +2,25 @@
 name = "le-chonk"
 version = "0.1.0"
 description = "24-hour vulnerability response demo — see PROJECT.md and docs/build-prompt.md"
-requires-python = ">=3.11"
-dependencies = []
+# mistralai-workflows 3.20.0 requires >=3.12,<3.15 (track C); track A/B code is 3.11-compatible.
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "fastapi>=0.165.0",
+    "jsonschema>=4.26.0",
+    "mistralai-workflows==3.20.0",
+    "uvicorn>=0.54.0",
+]
 
 [dependency-groups]
 dev = [
-    "pytest>=8",
+    "httpx>=0.28.1",
     "jsonschema>=4.18",
+    "pytest>=9.2.0",
 ]
 
 [tool.pytest.ini_options]
 # Root suite only. Each fleet/<svc>/tests/ suite belongs to its service and
 # needs that service's own venv (see fleet/README.md).
 testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v --tb=short"
