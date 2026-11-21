@@ -168,3 +168,21 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 ## [2026-11-21] edit | plug kb-scan engine into the Le Chonk run lifecycle (handoff root, serve contract, bridge)
 
 - tools/ (11 files)
+
+## [2026-11-21] edit | adversarial simulator: gate-contract doc builder, watchlist leads, flood-proof tests
+
+- tools/scan/patches/gate-sim-triage.patch.md
+- tools/scan/simulate.py
+- tools/scan/tests/conftest.py
+- tools/scan/tests/simulate/README.md
+- tools/scan/tests/test_sim_contract.py
+
+## [2026-11-21] edit | cross-run history index (orchestrator/history.py)
+
+- tools/scan/patches/gate-sim-triage.patch.md
+- tools/scan/simulate.py
+- tools/scan/tests/conftest.py
+- tools/scan/tests/simulate/README.md
+- tools/scan/tests/test_sim_contract.py
+
+## [2026-11-21] edit | web UI voice: continuous listening mode, rolling transcript, follow-up context

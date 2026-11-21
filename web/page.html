@@ -223,6 +223,14 @@
   .scan-item .pkg { font-family: var(--mono); font-size: 11px; color: var(--muted); word-break: break-all; }
   .scan-item .title { font-size: 12px; }
   .scan-item .src-line { font-size: 10.5px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+
+  /* ---------- voice */
+  button.listening { border-color: var(--live); color: var(--live); background: var(--live-bg); }
+  .voice-live { margin-top: 10px; font-size: 12.5px; color: var(--live); min-height: 18px; font-style: italic; }
+  .voice-log { margin-top: 8px; display: grid; gap: 8px; max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 8px 10px; }
+  .voice-entry { font-size: 12.5px; display: grid; gap: 1px; }
+  .voice-entry .who { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--muted); }
+  .voice-entry.answer .who { color: var(--live); }
 </style>
 </head>
 <body>
@@ -315,10 +323,13 @@
     </h2>
     <div class="actions">
       <button id="speak-brief" title="Fetch the ≤90-word kb-scan brief and speak it with the browser"><svg class="icon"><use href="#i-pulse"/></svg>Speak brief</button>
-      <button id="voice-ask" hidden title="Ask a question with the microphone"><svg class="icon"><use href="#i-mic"/></svg>Ask by voice</button>
+      <button id="voice-ask" hidden title="Ask one question with the microphone"><svg class="icon"><use href="#i-mic"/></svg>Ask by voice</button>
+      <button id="voice-continuous" hidden title="Keep listening and answer follow-ups until stopped"><svg class="icon"><use href="#i-pulse"/></svg>Listen continuously</button>
       <span class="muted" id="voice-status"></span>
     </div>
-    <p class="scan-note" id="voice-transcript">Voice queries about “threat”, “scan”, “brief” or what is “new” refresh the feed watch and this run, then answer out loud. If this browser has no speech recognition, the voice button stays hidden.</p>
+    <div class="voice-live" id="voice-live"></div>
+    <div class="voice-log" id="voice-log"><div class="empty">No voice exchanges yet.</div></div>
+    <p class="scan-note">Voice queries about “threat”, “scan”, “brief” or what is “new” refresh the feed watch and this run, then answer out loud; follow-ups like “and the top one?” or “what changed?” are answered from the rolling log and the current poll state. The microphone needs a secure context (HTTPS or localhost); browsers without SpeechRecognition keep the voice buttons hidden.</p>
   </section>
 
   <section class="row two" style="align-items:start">
@@ -698,14 +709,16 @@ async function pollScanRun() {
 // `kb-scan serve` on 127.0.0.1:8787). In the GUI the browser speaks with the Web Speech API.
 const SCAN_SERVE_BASE = String(window.KB_SCAN_BASE || "http://127.0.0.1:8787").replace(/\/+$/, "");
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null, listening = false;
+const VOICE_LOG_MAX = 10, VOICE_ENTRY_MAX = 300;
+let recognition = null, micStream = null, listening = false, continuous = false, voiceBusy = false;
+let voiceLog = [], lastAnswer = null, lastSnapshot = null, prevSnapshot = null;
 function setVoiceStatus(text) { $("voice-status").textContent = text || ""; }
 function speak(text) {
   if (!("speechSynthesis" in window)) { setVoiceStatus("This browser has no speechSynthesis, so it cannot speak."); return; }
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(String(text).slice(0, 600));
-  utterance.onend = () => setVoiceStatus("Spoken.");
-  utterance.onerror = () => setVoiceStatus("The browser could not speak that.");
+  utterance.onend = () => { if (!listening) setVoiceStatus("Spoken."); };
+  utterance.onerror = () => { if (!listening) setVoiceStatus("The browser could not speak that."); };
   window.speechSynthesis.speak(utterance);
 }
 async function fetchBriefText() {
@@ -722,36 +735,123 @@ async function fetchBriefText() {
   }
   throw new Error("No brief available (" + problems.join("; ") + ").");
 }
-async function startListening() {
-  if (!SpeechRecognitionCtor || listening) return;
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach((track) => track.stop());
-  } catch (error) { setVoiceStatus("Microphone refused: " + error.message); return; }
-  recognition = new SpeechRecognitionCtor();
-  recognition.lang = navigator.language || "en-US";
-  recognition.interimResults = false;
-  recognition.onresult = (event) => { handleVoiceQuery(event.results[event.results.length - 1][0].transcript); };
-  recognition.onerror = (event) => { listening = false; $("voice-ask").textContent = "Ask by voice"; setVoiceStatus("Voice input error: " + event.error); };
-  recognition.onend = () => { listening = false; $("voice-ask").textContent = "Ask by voice"; };
-  listening = true; $("voice-ask").textContent = "Listening…";
-  setVoiceStatus("Listening. Ask about threats, the scan, the brief, or what is new.");
-  recognition.start();
+// Rolling transcript: last VOICE_LOG_MAX "You asked"/"Answer" exchanges, each capped, text only.
+function addVoiceEntry(kind, text) {
+  voiceLog.push({ kind, text: String(text).slice(0, VOICE_ENTRY_MAX) });
+  while (voiceLog.length > VOICE_LOG_MAX) voiceLog.shift();
+  const log = $("voice-log");
+  log.replaceChildren(...voiceLog.map((entry) => el("div", { class: "voice-entry " + entry.kind },
+    el("span", { class: "who", text: entry.kind === "you" ? "You asked" : "Answer" }),
+    el("span", { text: entry.text }))));
+  log.scrollTop = log.scrollHeight;
+}
+// The same poll state the tiles render: every spoken number comes from here.
+function snapshotState() {
+  return {
+    at: Date.now(),
+    feedTotal: scanLatest && typeof scanLatest.total === "number" ? scanLatest.total : null,
+    feedAt: scanLatest && scanLatest.generated_at ? String(scanLatest.generated_at) : "",
+    gated: run ? run.tiles.length : 0,
+    repos: run ? run.repos_total : 0,
+    stage: run ? String(run.stage || "") : "",
+  };
+}
+function summarizeState() {
+  const s = snapshotState();
+  prevSnapshot = lastSnapshot; lastSnapshot = s;
+  return "Feed watch shows " + (s.feedTotal === null ? "no" : s.feedTotal) + " unverified findings"
+    + (s.feedAt ? " from " + s.feedAt : "")
+    + ". This run has " + s.gated + " of " + s.repos + " repositories through the gate"
+    + (s.stage ? ", stage " + s.stage : "") + ".";
+}
+// Follow-ups answered from the rolling log and current state, without a new fetch.
+function answerFromState(question) {
+  if (/(top|first|highest|worst|most severe)/.test(question)) {
+    const item = scanLatest && Array.isArray(scanLatest.items) ? scanLatest.items[0] : null;
+    if (!item) return "The feed watch has no findings to rank yet.";
+    return "The top unverified feed finding is tier " + (item.tier === null || item.tier === undefined ? "?" : String(item.tier))
+      + (item.cve ? ", " + String(item.cve) : "") + (item.title ? ": " + String(item.title).slice(0, 120) : "")
+      + ". That is unverified feed data, not a verdict.";
+  }
+  if (/(what changed|any change|different|since the last)/.test(question) && lastSnapshot && prevSnapshot) {
+    const feedDelta = (lastSnapshot.feedTotal === null ? 0 : lastSnapshot.feedTotal) - (prevSnapshot.feedTotal === null ? 0 : prevSnapshot.feedTotal);
+    const gateDelta = lastSnapshot.gated - prevSnapshot.gated;
+    return "Since the last check, unverified feed findings went from " + (prevSnapshot.feedTotal === null ? "unknown" : prevSnapshot.feedTotal)
+      + " to " + (lastSnapshot.feedTotal === null ? "unknown" : lastSnapshot.feedTotal)
+      + " (" + (feedDelta > 0 ? "+" : "") + feedDelta + "), and repositories through the gate from "
+      + prevSnapshot.gated + " to " + lastSnapshot.gated + " (" + (gateDelta > 0 ? "+" : "") + gateDelta + ").";
+  }
+  return lastAnswer;  // "repeat that" / "say again" and anything else: the last answer stands
 }
 async function handleVoiceQuery(text) {
-  $("voice-transcript").textContent = "You asked: “" + String(text).slice(0, 300) + "”";
-  const question = String(text).toLowerCase();
-  if (!["threat", "scan", "brief", "new"].some((word) => question.includes(word))) {
-    const line = "Ask me about threats, the scan, the brief, or what is new, and I will refresh the feed watch and this run.";
-    setVoiceStatus(line); speak(line); return;
+  if (voiceBusy) return;
+  const question = String(text).slice(0, VOICE_ENTRY_MAX);
+  const q = question.toLowerCase();
+  if (q.includes("stop listening") || q.includes("stop voice")) { stopListening(); const line = "Stopped listening."; addVoiceEntry("answer", line); speak(line); return; }
+  addVoiceEntry("you", question);
+  const wantsRefresh = ["threat", "scan", "brief", "new"].some((word) => q.includes(word));
+  let answer = null;
+  if (!wantsRefresh && lastSnapshot) answer = answerFromState(q);
+  if (answer === null) {
+    voiceBusy = true; setVoiceStatus("Refreshing the feed watch and this run…");
+    await Promise.allSettled([pollScanLatest(), poll(), pollScanRun()]);
+    voiceBusy = false;
+    answer = summarizeState();
   }
-  setVoiceStatus("Refreshing the feed watch and this run…");
-  await Promise.allSettled([pollScanLatest(), poll(), pollScanRun()]);
-  const total = scanLatest && typeof scanLatest.total === "number" ? scanLatest.total : 0;
-  const gated = run ? run.tiles.length : 0, repos = run ? run.repos_total : 0;
-  const line = "Feed watch shows " + total + " unverified findings. This run has " + gated + " of " + repos + " repositories through the gate.";
-  setVoiceStatus(line); speak(line);
+  lastAnswer = answer;
+  addVoiceEntry("answer", answer);
+  setVoiceStatus(answer);
+  speak(answer);
 }
+function setListeningUI() {
+  const ask = $("voice-ask"), cont = $("voice-continuous");
+  ask.classList.toggle("listening", listening && !continuous);
+  cont.classList.toggle("listening", listening && continuous);
+  ask.textContent = listening && !continuous ? "Stop" : "Ask by voice";
+  cont.textContent = listening && continuous ? "Stop listening" : "Listen continuously";
+}
+function stopListening() {
+  listening = false; continuous = false;
+  if (recognition) { try { recognition.stop(); } catch (error) { /* already stopped */ } recognition = null; }
+  if (micStream) { micStream.getTracks().forEach((track) => track.stop()); micStream = null; }
+  $("voice-live").textContent = "";
+  setListeningUI();
+}
+async function startListening(mode) {
+  if (!SpeechRecognitionCtor || listening) return;
+  continuous = mode === "continuous";
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    continuous = false;
+    setVoiceStatus("Microphone refused: " + error.message + " (a secure context — HTTPS or localhost — is required)");
+    return;
+  }
+  recognition = new SpeechRecognitionCtor();
+  recognition.lang = navigator.language || "en-US";
+  recognition.interimResults = continuous;  // live interim transcript in continuous mode only
+  recognition.onresult = (event) => {
+    const result = event.results[event.results.length - 1];
+    const transcript = result[0].transcript;
+    if (continuous) $("voice-live").textContent = result.isFinal ? "" : "Heard: “" + String(transcript).slice(0, VOICE_ENTRY_MAX) + "”";
+    if (result.isFinal) { $("voice-live").textContent = ""; handleVoiceQuery(transcript); }
+  };
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") { stopListening(); setVoiceStatus("Voice input error: " + event.error); }
+    else setVoiceStatus("Voice input: " + event.error + (listening ? " — still listening" : ""));
+  };
+  recognition.onend = () => {
+    // Continuous mode restarts automatically while enabled; otherwise the session is over.
+    if (listening && continuous && recognition) { try { recognition.start(); } catch (error) { stopListening(); } }
+    else setListeningUI();
+  };
+  listening = true;
+  setListeningUI();
+  setVoiceStatus(continuous ? "Listening continuously — say “stop listening” or toggle it off."
+    : "Listening. Ask about threats, the scan, the brief, or what is new.");
+  try { recognition.start(); } catch (error) { stopListening(); setVoiceStatus("Could not start voice input: " + error.message); }
+}
+window.addEventListener("pagehide", () => { stopListening(); if ("speechSynthesis" in window) window.speechSynthesis.cancel(); });
 
 // ---------------------------------------------------------------- under the hood
 function openDrawer(name) {
@@ -878,8 +978,9 @@ $("speak-brief").addEventListener("click", async () => {
   try { const brief = await fetchBriefText(); setVoiceStatus("Brief: " + brief.slice(0, 120) + (brief.length > 120 ? "…" : "")); speak(brief); }
   catch (error) { setVoiceStatus(error.message); }
 });
-if (SpeechRecognitionCtor && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) $("voice-ask").hidden = false;
-$("voice-ask").addEventListener("click", () => { listening ? (recognition && recognition.stop()) : startListening(); });
+if (SpeechRecognitionCtor && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) { $("voice-ask").hidden = false; $("voice-continuous").hidden = false; }
+$("voice-ask").addEventListener("click", () => { listening ? stopListening() : startListening("once"); });
+$("voice-continuous").addEventListener("click", () => { listening && continuous ? stopListening() : startListening("continuous"); });
 if (!("speechSynthesis" in window)) { $("speak-brief").disabled = true; $("voice-status").textContent = "This browser has no speechSynthesis."; }
 
 api("/config").then((config) => {
