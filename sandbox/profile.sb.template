@@ -1,0 +1,96 @@
+;; Seatbelt profile for one sandboxed shell command. `sandbox/douane` fills it in.
+;;
+;; Parameters (passed with `sandbox-exec -D NAME=value`, all real paths):
+;;   WORKDIR      the only folder the command may write to
+;;   SANDBOX_DIR  WORKDIR/.sandbox, where douane keeps the command's HOME, temp folder and uv cache
+;;   REAL_HOME    the home folder of the user who runs the tool
+;; douane replaces the two marker lines below with rules it builds from the environment.
+;; No profile file is written anywhere: the text goes to sandbox-exec with -p.
+;;
+;; How rules combine, as observed on macOS 26.5.2 (build 25F84) with /usr/bin/sandbox-exec.
+;; Each point was run as a tiny profile; docs/AGENT.md lists the probes.
+;;   1. A rule with a path filter beats a rule without one, whatever the order.
+;;      `(allow file-write* (subpath W))` then `(deny file-write*)`: writes inside W still work,
+;;      writes elsewhere fail. Same with the two lines swapped.
+;;   2. Among rules that name the operation the same way and have a path filter, the LAST one that
+;;      matches wins. Specificity of the path does not count.
+;;      `(deny file-read* (subpath W/secrets))` then `(allow file-read* (subpath W))`: the secret is
+;;      readable. Swapped: it is not.
+;;   3. A rule that names one operation (`file-read-data`) beats a rule that names it through a
+;;      wildcard (`file-read*`), wherever each stands.
+;;      `(deny file-read-data (subpath H))` then `(allow file-read* (subpath H/W))`: files in W stay
+;;      unreadable. `(allow file-read-data (subpath W))` then `(deny file-read* (subpath W/secrets))`:
+;;      the secret stays readable. So an exception names the same operation as the rule it
+;;      overrides, and every deny for a secret names `file-read-data` as well as `file-read*`.
+;;   4. `(deny default)` with only narrow `file-read*` allows makes the child abort at startup
+;;      (exit 134, before bash runs). With `(allow file-read*)` it starts. So names and attributes
+;;      stay readable everywhere, and file contents are taken away where it matters.
+;;   5. A read deny alone is not enough inside a writable folder: `mv secrets/key elsewhere` worked
+;;      and the file was readable under its new name. So every path that is denied for reading is
+;;      denied for writing too (a rename needs write access to the old name).
+;;      Hard links from a denied or outside path were refused without any extra rule.
+(version 1)
+(deny default)
+
+;; Run programs. No mach-lookup is allowed, so the command cannot talk to system services such as
+;; the Keychain daemon. bash, python, pytest and uv ran without it. No network rule either, so
+;; `(deny default)` blocks every socket, loopback included.
+(allow process-fork)
+(allow process-exec)
+(allow signal (target same-sandbox))
+(allow sysctl-read)
+(allow file-ioctl)
+
+;; ---- reads ----
+;; Names and attributes of files can be read everywhere (see 4 above).
+(allow file-read*)
+
+;; File contents and folder listings are off wherever people keep their own things: home folders,
+;; the shared temp folders, external disks. Shell output goes to the model, so what the shell can
+;; read, the model provider can end up seeing.
+(deny file-read-data
+  (subpath "/Users")
+  (subpath (param "REAL_HOME"))
+  (subpath "/private/tmp")
+  (subpath "/private/var/folders")
+  (subpath "/private/var/tmp")
+  (subpath "/Volumes"))
+
+;; The exceptions, naming the same operation (see 3 above): the workdir, and what douane adds below
+;; (the wheelhouse, the Python install behind the venv, the uv binary, SANDBOX_READ_ALLOW).
+(allow file-read-data (subpath (param "WORKDIR")))
+;; @DOUANE_READ_RULES@
+
+;; ---- writes ----
+;; The workdir and the usual device files. Nothing else: HOME and TMPDIR are inside the workdir.
+(allow file-write*
+  (subpath (param "WORKDIR"))
+  (literal "/dev/null")
+  (literal "/dev/zero")
+  (literal "/dev/tty")
+  (literal "/dev/stdout")
+  (literal "/dev/stderr")
+  (literal "/dev/dtracehelper")
+  (regex #"^/dev/fd/[0-9]+$")
+  (regex #"^/dev/ttys[0-9]+$"))
+
+;; ---- deny rules: keep them last (see 2 above) ----
+
+;; No new symlinks in the workdir, except in douane's own folder (uv's cache and pytest's temp
+;; folders use them). The file tools run outside this sandbox and are checked by path_hook.py after
+;; resolving symlinks; a link created here could be swapped under that check. path_hook.py refuses
+;; every path in douane's folder, so links there are of no use to the file tools.
+(deny file-write-create
+  (require-all
+    (subpath (param "WORKDIR"))
+    (vnode-type SYMLINK)
+    (require-not (subpath (param "SANDBOX_DIR")))))
+
+;; Any file named .env or .env.something, anywhere on the machine.
+(deny file-read-data file-read* file-write* (regex #"/\.env(\.[^/]*)?$"))
+
+;; Any folder named secrets inside the workdir, at any depth, and everything in it.
+(deny file-read-data file-read* file-write*
+  (require-all (subpath (param "WORKDIR")) (regex #"/secrets(/|$)")))
+
+;; @DOUANE_DENY_RULES@

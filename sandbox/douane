@@ -1,0 +1,221 @@
+#!/bin/bash
+# douane: run one shell command inside the macOS sandbox, with a clean environment.
+#
+#   SANDBOX_WORKDIR=/abs/dir sandbox/douane '<one shell command string>'
+#
+# The command runs as `/bin/bash -c "<string>"` under /usr/bin/sandbox-exec with the profile in
+# profile.sb.template. Its exit code is the command's exit code. douane's own failures exit 125.
+#
+# What the command gets:
+#   - no network;
+#   - writes only inside SANDBOX_WORKDIR. Its HOME and its temp folder are inside the workdir too
+#     (in .sandbox/), so the shared /tmp is not writable;
+#   - no file contents and no folder listings from home folders, /private/tmp, /private/var/folders
+#     or /Volumes, except the workdir, the wheelhouse, the Python install behind the workdir's venv,
+#     the uv binary and SANDBOX_READ_ALLOW;
+#   - no reads of .env files, of secrets/ folders in the workdir, of the Vibe home, of ~/.vibe, or
+#     of any path listed in SANDBOX_DENY_READ, wherever they are;
+#   - an environment built from nothing (`env -i`). Vibe passes its own environment, .env values
+#     included, to every command it starts; none of it reaches the command.
+#
+# Read from the caller's environment:
+#   SANDBOX_WORKDIR     required. Absolute path of the folder the command may write to.
+#   SANDBOX_DENY_READ   optional. Colon-separated absolute paths that must not be read or written.
+#   SANDBOX_DENY_WRITE  optional. Colon-separated absolute paths that stay readable but not writable.
+#   SANDBOX_READ_ALLOW  optional. Colon-separated absolute paths whose contents may be read.
+#   SANDBOX_WHEELHOUSE  optional. Folder of wheels: readable, and exported as UV_FIND_LINKS / PIP_FIND_LINKS.
+#   SANDBOX_UV          optional. Path of the uv binary to offer inside (default: found on PATH).
+#   VIBE_HOME           optional. Denied when set.
+#   HOME, TMPDIR        kept when they already point inside the workdir (the gate does that),
+#                       replaced by folders in <workdir>/.sandbox/ otherwise.
+#   PATH, LANG          PATH is only used to find uv; LANG is passed on.
+# The gate calls this with only SANDBOX_WORKDIR, PATH, HOME, LANG and TMPDIR set. That is enough.
+set -u
+
+die() {
+  echo "douane: $*" >&2
+  exit 125
+}
+
+[ "$#" -ge 1 ] || die "usage: SANDBOX_WORKDIR=/abs/dir douane '<shell command>'"
+[ -x /usr/bin/sandbox-exec ] || die "/usr/bin/sandbox-exec not found (macOS only)"
+[ -n "${SANDBOX_WORKDIR:-}" ] || die "SANDBOX_WORKDIR is not set"
+case "$SANDBOX_WORKDIR" in
+  /*) ;;
+  *) die "SANDBOX_WORKDIR must be an absolute path" ;;
+esac
+[ -d "$SANDBOX_WORKDIR" ] || die "SANDBOX_WORKDIR is not a directory: $SANDBOX_WORKDIR"
+
+# A path goes into the profile text inside a string literal, so these characters are refused.
+check_path() {
+  case "$1" in
+    *'"'* | *'\'* | *'
+'*) die "path holds a quote, a backslash or a newline: $1" ;;
+  esac
+}
+
+# Real path of $1, also when its last parts do not exist yet.
+resolve() {
+  local path="$1" tail=""
+  while [ ! -e "$path" ] && [ "$path" != "/" ]; do
+    tail="/$(basename "$path")$tail"
+    path="$(dirname "$path")"
+  done
+  path="$(/bin/realpath "$path")" || return 1
+  [ "$path" = "/" ] && path=""
+  if [ -z "$path$tail" ]; then printf '/'; else printf '%s%s' "$path" "$tail"; fi
+}
+
+here="$(cd "$(dirname "$0")" && pwd -P)" || die "cannot find my own folder"
+template="$here/profile.sb.template"
+[ -r "$template" ] || die "profile template not found: $template"
+
+workdir="$(/bin/realpath "$SANDBOX_WORKDIR")" || die "cannot resolve SANDBOX_WORKDIR"
+check_path "$workdir"
+[ "$workdir" != "/" ] || die "the workdir cannot be /"
+
+# The real home of the user, not $HOME: the caller may have pointed HOME somewhere else.
+real_home="$(/usr/bin/id -P | cut -d: -f9)"
+[ -n "$real_home" ] && [ -d "$real_home" ] || die "cannot find the user's home folder"
+real_home="$(/bin/realpath "$real_home")" || die "cannot resolve the user's home folder"
+check_path "$real_home"
+
+# ---- the sandbox's own folder inside the workdir -------------------------------------------
+sandbox_dir="$workdir/.sandbox"
+[ ! -L "$sandbox_dir" ] || die "$sandbox_dir is a link"
+/bin/mkdir -p "$sandbox_dir/home" "$sandbox_dir/tmp" "$sandbox_dir/bin" || die "cannot create $sandbox_dir"
+
+# $1: a folder the caller named (HOME or TMPDIR). Prints it when it lies inside the workdir.
+inside_workdir() {
+  local real
+  [ -n "$1" ] && [ -d "$1" ] || return 1
+  real="$(/bin/realpath "$1")" || return 1
+  case "$real/" in
+    "$workdir"/*) printf '%s' "$real" ;;
+    *) return 1 ;;
+  esac
+}
+inner_home="$(inside_workdir "${HOME:-}")" || inner_home="$sandbox_dir/home"
+inner_tmp="$(inside_workdir "${TMPDIR:-}")" || inner_tmp="$sandbox_dir/tmp"
+
+# ---- rules built from the environment -----------------------------------------------------
+read_rules=""
+deny_rules=""
+
+# $1: a path whose contents the command may read.
+add_read() {
+  local path
+  path="$(resolve "$1")" || die "cannot resolve the readable path $1"
+  check_path "$path"
+  read_rules="${read_rules}(allow file-read-data (subpath \"${path}\"))
+"
+}
+
+# $1: the operations to deny. $2: a path. The workdir must not sit inside a denied path.
+add_deny() {
+  local operations="$1" path
+  path="$(resolve "$2")" || die "cannot resolve the denied path $2"
+  check_path "$path"
+  case "$workdir/" in
+    "$path"/*) die "the workdir is inside a denied path: $path" ;;
+  esac
+  deny_rules="${deny_rules}(deny ${operations} (subpath \"${path}\"))
+"
+}
+
+# $1: add_read, or the operations for add_deny. $2: a colon-separated list of absolute paths.
+for_each_path() {
+  local what="$1" list="$2" entry old_ifs="$IFS"
+  set -f # no filename expansion while the list is split
+  IFS=":"
+  for entry in $list; do
+    IFS="$old_ifs"
+    [ -n "$entry" ] || continue
+    case "$entry" in
+      /*) ;;
+      *) die "not an absolute path in a path list: $entry" ;;
+    esac
+    if [ "$what" = "add_read" ]; then add_read "$entry"; else add_deny "$what" "$entry"; fi
+  done
+  IFS="$old_ifs"
+  set +f
+}
+
+# What the command needs to read outside the workdir.
+wheelhouse=""
+if [ -n "${SANDBOX_WHEELHOUSE:-}" ]; then
+  wheelhouse="$(resolve "$SANDBOX_WHEELHOUSE")" || die "cannot resolve SANDBOX_WHEELHOUSE"
+  add_read "$wheelhouse"
+fi
+# The interpreter behind the workdir's venv, and uv's own Python folder. A venv made by
+# `uv venv` links to a Python under ~/.local/share/uv/python, which is below the home folder.
+if [ -e "$workdir/venv/bin/python" ]; then
+  interpreter="$(/bin/realpath "$workdir/venv/bin/python")" || die "cannot resolve the venv's interpreter"
+  add_read "$(dirname "$(dirname "$interpreter")")"
+fi
+[ -d "$real_home/.local/share/uv/python" ] && add_read "$real_home/.local/share/uv/python"
+for_each_path add_read "${SANDBOX_READ_ALLOW:-}"
+
+# uv is offered through a link in the sandbox's bin folder, so its own folder is not on PATH.
+uv_bin="${SANDBOX_UV:-}"
+[ -n "$uv_bin" ] || uv_bin="$(command -v uv 2>/dev/null || true)"
+for candidate in "$real_home/.local/bin/uv" /opt/homebrew/bin/uv /usr/local/bin/uv; do
+  [ -n "$uv_bin" ] && break
+  [ -x "$candidate" ] && uv_bin="$candidate"
+done
+if [ -n "$uv_bin" ] && [ -x "$uv_bin" ]; then
+  uv_bin="$(/bin/realpath "$uv_bin")" || die "cannot resolve the uv binary"
+  /bin/ln -sf "$uv_bin" "$sandbox_dir/bin/uv" || die "cannot link uv"
+  add_read "$uv_bin"
+fi
+
+# Reading and writing are denied together: see point 5 in the profile template. `file-read-data`
+# is named next to `file-read*` because of point 3.
+both="file-read-data file-read* file-write*"
+[ -n "${VIBE_HOME:-}" ] && add_deny "$both" "$VIBE_HOME"
+add_deny "$both" "$real_home/.vibe"
+for_each_path "$both" "${SANDBOX_DENY_READ:-}"
+for_each_path "file-write*" "${SANDBOX_DENY_WRITE:-}"
+
+profile="$(/bin/cat "$template")" || die "cannot read the profile template"
+for marker in ";; @DOUANE_READ_RULES@" ";; @DOUANE_DENY_RULES@"; do
+  case "$profile" in
+    *"$marker"*) ;;
+    *) die "the profile template lacks the marker $marker" ;;
+  esac
+done
+profile="${profile/";; @DOUANE_READ_RULES@"/$read_rules}"
+profile="${profile/";; @DOUANE_DENY_RULES@"/$deny_rules}"
+
+# ---- the clean environment ----------------------------------------------------------------
+path="$sandbox_dir/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+env_args=(
+  "HOME=$inner_home"
+  "TMPDIR=$inner_tmp"
+  "TMP=$inner_tmp"
+  "TEMP=$inner_tmp"
+  "LANG=${LANG:-en_US.UTF-8}"
+  "SANDBOX_WORKDIR=$workdir"
+  "PYTHONDONTWRITEBYTECODE=1"
+  "PIP_NO_INDEX=1"
+  "PIP_DISABLE_PIP_VERSION_CHECK=1"
+  "UV_OFFLINE=1"
+  "UV_NO_INDEX=1"
+  "UV_NO_CONFIG=1"
+  "UV_PYTHON_DOWNLOADS=never"
+  "UV_LINK_MODE=copy"
+  "UV_CACHE_DIR=$sandbox_dir/uv-cache"
+)
+# The workdir's own venv comes first, so `python` and `pytest` mean the ones installed there.
+if [ -x "$workdir/venv/bin/python" ]; then
+  path="$workdir/venv/bin:$path"
+  env_args+=("VIRTUAL_ENV=$workdir/venv")
+fi
+env_args+=("PATH=$path")
+if [ -n "$wheelhouse" ]; then
+  env_args+=("UV_FIND_LINKS=$wheelhouse" "PIP_FIND_LINKS=$wheelhouse" "SANDBOX_WHEELHOUSE=$wheelhouse")
+fi
+
+exec /usr/bin/env -i "${env_args[@]}" \
+  /usr/bin/sandbox-exec -D "WORKDIR=$workdir" -D "SANDBOX_DIR=$sandbox_dir" -D "REAL_HOME=$real_home" -p "$profile" \
+  /bin/bash -c "$*"
