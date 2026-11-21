@@ -16,6 +16,7 @@
 ;; SIGABRT at startup; (subpath "/") is the only form that lets processes start.
 ;; Secrets are then carved out with deny rules (deny wins over allow):
 (allow file-read* (subpath "/"))
+(allow file-read* (subpath "__PYDIR__"))            ;; uv-managed CPython installs (venv interpreters)
 (deny file-read* (regex "/\\.env($|/)"))          ;; any .env anywhere
 (deny file-read* (subpath "__WORKDIR__/secrets"))
 (deny file-read* (subpath "__VIBEHOME__"))         ;; the worker's VIBE_HOME (holds the API key)

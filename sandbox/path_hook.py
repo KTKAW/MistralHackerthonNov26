@@ -24,8 +24,12 @@ import sys
 WORK = os.path.realpath(os.environ.get("SANDBOX_WORKDIR") or os.getcwd())
 SRC = os.path.join(WORK, "src")
 VERDICT = os.path.join(WORK, "verdict.json")
+# Read-only system paths the sandbox profile allows. Deliberately narrow: /private
+# also holds /private/var/folders (pytest tmp dirs) and /private/tmp, which are NOT
+# system files — outside-workdir reads of those must be denied.
 SYSTEM_READ_PREFIXES = (
-    "/usr/", "/bin/", "/sbin/", "/System/", "/Library/", "/private/", "/dev/", "/etc/",
+    "/usr/", "/bin/", "/sbin/", "/System/", "/Library/",
+    "/etc/", "/dev/", "/private/etc/", "/private/dev/",
 )
 WRITE_TOOLS = {"write_file", "edit"}
 
