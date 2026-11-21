@@ -33,8 +33,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from orchestrator import config, fetch_fleet
+from orchestrator import config, fetch_fleet, record
 from orchestrator import gate as gate_checks
+from vulnerability_agent import contract
 
 MAX_FILES = 20
 MAX_BYTES = 200_000
@@ -52,7 +53,7 @@ class Refused(Exception):
 
 
 def open_fix_pr(run_id: str, verdict: dict, *, runs_root: str | Path | None = None) -> dict:
-    """Open the draft pull request for one gated verdict. Returns {url, number, branch, title, draft}.
+    """Open the draft pull request for one record (orchestrator/record.py). Returns {url, number, branch, title, draft}.
 
     Raises Refused when this verdict must not become a pull request. Safe to call again: a
     pull request that already exists for this run and repository is returned, not duplicated.
@@ -68,15 +69,17 @@ def open_fix_pr(run_id: str, verdict: dict, *, runs_root: str | Path | None = No
         raise Refused("this repository was not fetched from a GitHub address at a pinned commit, so there is nowhere to propose the fix")
 
     run_dir = config.run_dir(run_id, runs_root)
-    try:  # the facts the tool itself read and checked, not the copy inside the worker's verdict
-        advisory = json.loads((run_dir / "advisory.json").read_text(encoding="utf-8"))
+    try:  # the facts the tool itself read and checked
+        advisory = json.loads((run_dir / contract.ADVISORY_JSON).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         raise Refused("the run has no advisory facts on disk") from None
-    advisory_id = str(advisory.get("id", ""))
+    advisory_id = str(advisory.get("advisory_id", ""))
     if not _ADVISORY.match(advisory_id):
         raise Refused("the advisory identifier is not a CVE or GHSA identifier")
 
-    work, fixed = run_dir / repo / "src", run_dir / repo / "gate" / "fixed"
+    # The change is what fix.diff holds: the work copy against the fleet copy. The proof tests are
+    # in proof/, outside the work copy, so they stay with the run and are not part of the proposal.
+    work, fixed = run_dir / repo / contract.SRC_DIR, run_dir / repo / contract.GATE_DIR / "fixed" / contract.SRC_DIR
     changes = gate_checks.work_copy_changes(run_id, repo, runs_root=runs_root)
     if changes is None:
         raise Refused("the work copy or the original is missing")
@@ -103,7 +106,7 @@ def open_fix_pr(run_id: str, verdict: dict, *, runs_root: str | Path | None = No
     if not _BRANCH.match(branch) or ".." in branch or branch.endswith((".lock", ".", "/")):
         raise Refused("the run identifier cannot be used in a branch name")
     owner_repo = app["url"].removeprefix("https://github.com/")
-    title = _title(repo, advisory, verdict)
+    title = _title(repo, advisory, verdict, gate_checks.pinned_version(work / "requirements.txt", str(advisory.get("package", ""))))
 
     existing = _existing_pr(owner_repo, branch)
     if existing:
@@ -131,12 +134,13 @@ def _code(text: object, limit: int = 300) -> str:
     return "`" + (_plain(text, limit) or "?") + "`"
 
 
-def _title(repo: str, advisory: dict, verdict: dict) -> str:
+def _title(repo: str, advisory: dict, verdict: dict, pinned: str | None) -> str:
+    """`pinned` is the version the work copy's requirements.txt pins the package to, read by this tool."""
     fix = verdict.get("fix") or {}
-    package, target = str(advisory.get("package", "")), str(fix.get("target", ""))
+    package, target = str(advisory.get("package", "")), str(pinned or "")
     if fix.get("kind") == "upgrade" and _PACKAGE.match(package) and _VERSION.match(target):
-        return f"Upgrade {package} to {target} ({advisory['id']})"
-    return f"Fix {advisory['id']} in {repo}"
+        return f"Upgrade {package} to {target} ({advisory['advisory_id']})"
+    return f"Fix {advisory['advisory_id']} in {repo}"
 
 
 def _body(run_id: str, repo: str, advisory: dict, verdict: dict, app: dict, changes: dict) -> str:
@@ -149,8 +153,8 @@ def _body(run_id: str, repo: str, advisory: dict, verdict: dict, app: dict, chan
         *[f"- {_code(name)} added" for name in changes["added"]],
         *[f"- {_code(name)} deleted" for name in changes["deleted"]],
         "",
-        f"It is the fix for {_plain(advisory.get('id'))}: {_code(advisory.get('package'))}, affected versions {_code(advisory.get('affected_range'))}, "
-        f"flawed function {_code(advisory.get('flawed_function'))}.",
+        f"It is the fix for {_plain(advisory.get('advisory_id'))}: {_code(advisory.get('package'))}, affected versions {_code(advisory.get('affected_version_range'))}, "
+        f"fixed in {_code(advisory.get('fixed_version'))}, flawed function {_code(advisory.get('flawed_function'))}.",
         "",
         "## What was checked before this was opened",
         "",
@@ -166,10 +170,10 @@ def _body(run_id: str, repo: str, advisory: dict, verdict: dict, app: dict, chan
         outcome = "yes" if rule.get("passed") is True else "no" if rule.get("enforced") else "no (recorded, not enforced)"
         detail = _plain(rule.get("detail", ""), 240) if name in gate_checks.MEASURED else ""
         lines.append(f"| {_plain(gate_checks.RULE_LABELS.get(name, name))} | {outcome}{': ' + _code(detail, 240) if detail else ''} |")
-    proofs = [test for test in verdict.get("proof") or [] if isinstance(test, str)]
+    proofs = record.proof_ids(verdict)
     if proofs:
-        lines += ["", "The proof is in this pull request: " + ", ".join(_code(test) for test in proofs[:5])
-                  + ". It fails on the base commit and passes with this change."]
+        lines += ["", "The proof test is kept with the run, outside the repository, and is not in this pull request: "
+                  + ", ".join(_code(test) for test in proofs[:5]) + ". It fails on the base commit and passes with this change."]
     cited = [f"{_plain(step.get('file'))}:{step.get('line')}" for step in verdict.get("path") or []
              if isinstance(step, dict) and isinstance(step.get("line"), int) and _FILE.match(str(step.get("file", "")))]
     if cited:

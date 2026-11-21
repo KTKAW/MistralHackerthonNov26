@@ -43,7 +43,7 @@ def vibe_home() -> Path:
 
 
 def sandbox_wrapper() -> Path:
-    """Track A's wrapper. The gate runs agent-written tests through it."""
+    """The sandbox wrapper. The gate runs agent-written tests through it."""
     return _path("LE_CHONK_SANDBOX", "sandbox/douane")
 
 
@@ -66,8 +66,16 @@ def python_version() -> str:
     return os.environ.get("LE_CHONK_PYTHON", "3.12")
 
 
+def max_parallel() -> int:
+    """How many repositories are worked on at once. The design's default is 10."""
+    try:
+        return max(1, int(os.environ.get("LE_CHONK_MAX_PARALLEL", "10")))
+    except ValueError:
+        return 10
+
+
 def run_repo_target() -> str:
-    """`module:function` of the per-repository worker. Track A's by default."""
+    """`module:function` of the per-repository worker. The Vibe worker by default."""
     return os.environ.get("LE_CHONK_RUN_REPO", "worker.run_repo:run_repo")
 
 

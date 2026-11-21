@@ -422,7 +422,7 @@ function renderHeader() {
   facts.hidden = !advisory;
   if (advisory) {
     const lookedUp = (run.advisory_lookup || []).filter((item) => onOsv(item.url));
-    facts.replaceChildren(...[["advisory", advisory.id], ["package", advisory.package], ["affected", advisory.affected_range], ["flawed function", advisory.flawed_function]]
+    facts.replaceChildren(...[["advisory", advisory.id], ["package", advisory.package], ["affected", advisory.affected_range], ["fixed in", advisory.fixed_version], ["flawed function", advisory.flawed_function]]
       .map(([label, value]) => el("div", { class: "fact" }, el("span", { text: label }), el("b", { text: value || "?" }))),
       lookedUp.length ? el("div", { class: "fact" }, el("span", { text: "looked up at OSV" }),
         el("b", {}, lookedUp.map((item, index) => [index ? ", " : "", el("a", { href: item.url, target: "_blank", rel: "noopener noreferrer", text: item.id })]))) : null);
@@ -440,7 +440,7 @@ function renderPipeline() {
   const mark = (done, active, bad) => (bad ? "failed" : done ? "done" : active ? "active" : "");
   const steps = [
     ["Intake", run ? "the clock is running" : "start a run", mark(!!run, false, false)],
-    ["Advisory read", run && run.advisory ? "four facts, checked" : failed && noFacts ? "stopped here" : "one model call", mark(!!(run && run.advisory), !!run && noFacts, failed && noFacts)],
+    ["Advisory read", run && run.advisory ? "five facts, checked" : failed && noFacts ? "stopped here" : "one model call", mark(!!(run && run.advisory), !!run && noFacts, failed && noFacts)],
     ["Agents", total ? returned + " of " + total + " returned" : "one per repository", mark(total > 0 && returned >= total, stage === "triage", false)],
     ["Gate", total ? gated + " of " + total + " re-checked" : "no model, re-runs it all", mark(total > 0 && gated >= total, stage === "triage" && returned > gated, false)],
     ["Draft", run && run.report_ready ? "written, no model" : "from gated verdicts only", mark(!!(run && run.report_ready), stage === "report", false)],
@@ -492,6 +492,7 @@ function buildCard(name, link, tile, state, stopped) {
   if (tile) {
     body.append(el("div", { class: "state" }, icon(VERDICT_ICON[tile.verdict] || "i-person"), tile.title));
     body.append(el("div", { class: "reason", text: tile.reason, title: tile.reason }));
+    if (tile.note) body.append(el("div", { class: "muted", text: tile.note }));
     if (tile.gate.failed_rules.length) body.append(el("div", {}, el("div", { class: "label", text: "Gate rules that failed" }), el("div", { class: "code-line", text: tile.gate.failed_rules.join(", ") })));
     if (tile.proof.length) body.append(el("div", {}, el("div", { class: "label", text: "Proof, re-run by the gate" }), tile.proof.map((test) => el("div", { class: "code-line", text: test }))));
     if (tile.fix) body.append(el("div", {}, el("div", { class: "label", text: "Fix" }), el("div", { text: fixText(tile.fix) })));
@@ -656,8 +657,9 @@ function renderDrawerBody() {
   if (drawerTab === "changes") {
     const boxes = detail.files.map((file) => codeBox(file.change, file.name, file.text, file.change === "changed"));
     const gone = detail.deleted.map((name) => el("div", { class: "code-line", text: "deleted: " + name }));
-    body.replaceChildren(el("p", { class: "muted", text: "The worker gets a fresh copy of the repository. This is everything that differs from the original afterwards." }),
-      ...(boxes.length || gone.length ? [...boxes, ...gone] : [el("div", { class: "empty", text: "Nothing was changed, added or deleted." })]));
+    const outputs = Object.entries(detail.proof_output || {}).map(([test, text]) => codeBox("proof output", test + ", on the vulnerable baseline", text));
+    body.replaceChildren(el("p", { class: "muted", text: "The worker gets a fresh copy of the repository in src/ and writes its proof tests in proof/, outside it. This is every proof test, and everything in src/ that differs from the original." }),
+      ...(boxes.length || gone.length ? [...boxes, ...gone] : [el("div", { class: "empty", text: "Nothing was changed, added or deleted." })]), ...outputs);
     return;
   }
   if (drawerTab === "claim") {
@@ -678,7 +680,7 @@ function renderDrawerBody() {
   body.replaceChildren(
     el("dl", { class: "kv" }, el("dt", { text: "Worker time" }), el("dd", { text: shown(usage.seconds) + " s" }),
       el("dt", { text: "Tokens, cost, steps" }), el("dd", { text: [usage.tokens, usage.cost_usd, usage.steps].map(shown).join(" · ") }),
-      el("dt", { text: "Gated verdict file" }), el("dd", {}, detail.checked ? el("a", { href: "/runs/" + encodeURIComponent(runId) + "/repos/" + encodeURIComponent(drawerRepo) + "/verdict.json", target: "_blank", rel: "noopener", text: "verdict.json" }) : "not yet")),
+      el("dt", { text: "Final state file" }), el("dd", {}, detail.checked ? el("a", { href: "/runs/" + encodeURIComponent(runId) + "/repos/" + encodeURIComponent(drawerRepo) + "/state.json", target: "_blank", rel: "noopener", text: "state.json" }) : "not yet")),
     detail.gate_log ? codeBox("gate log", "the gate's own commands and their output, last part", detail.gate_log) : el("div", { class: "empty", text: "The gate ran no commands for this repository." }),
     detail.export ? codeBox("worker export", "what the worker left behind", detail.export) : null);
 }

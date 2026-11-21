@@ -397,3 +397,63 @@ which an agent never sees.
   exploitation" for a person to fill in.
 - The early warning itself needs little: Article 14(2)(a) asks for the Member States where the
   product is available. The draft also carries notes for the 72-hour notification.
+
+### Moved to the design's run contract (21 November)
+
+The design branch pinned a run contract after this build was written: `docs/contract.md`, with
+its schemas and helpers in `src/vulnerability_agent/` (three commits from `dev-matteo`, brought
+over unchanged). This build now writes that contract. The old `schema/verdict.schema.json` and
+its two examples are gone.
+
+What a run leaves on disk now:
+
+| File | Owner | Was |
+|---|---|---|
+| `run.json` | orchestrator | Held the page's working state. It is now the contract's record only: clock start, workflow run id, fleet, approved-at, expired-at |
+| `orchestrator.json` | orchestrator | New. The working state the page polls (stage, counts, advisory text). Not part of the contract |
+| `advisory.json` | orchestrator | Four facts under other names, plus where they came from. Now the contract's five facts and nothing else: the fixed version is new |
+| `advisory.source.json` | orchestrator | New. Model or file, and any OSV record that was read |
+| `<repo>/verdict.json` | worker | Was rewritten by the gate. Now agent-owned fields only, and never touched after the worker wrote it |
+| `<repo>/state.json` | orchestrator | New. The final verdict, each gate rule's result, usage, and the saved proof output. The page and the report read the verdict from here |
+| `<repo>/proof/` | worker | New. Proof tests used to be new test files inside the work copy |
+| `<repo>/fix.diff` | orchestrator | New. `src/` against the fleet copy, computed by the gate |
+| `<repo>/gate/` | gate | Each baseline now has the layout of a repo-run root: `src/`, `proof/`, `venv/` |
+
+What changed in behaviour:
+
+1. **The gate's rules follow the spec.** `no_test_pass_to_fail_between_baselines` replaces "the
+   suite passes" and "no test disappeared": the repository's own tests run on both baselines and
+   are compared test by test. `cited_path_exists` checks every cited file and line of a "not
+   affected" verdict, not only that a path is cited. `installed_library_matches_wheelhouse`
+   compares the worker's own `venv/` with the wheel, file for file, when the worker left one.
+   `proof_in_proof_folder` refuses a proof that sits inside the work copy.
+2. **A proof says what it expects.** Each proof entry carries `on_vulnerable` and `on_fixed`. The
+   gate requires the outcome it measured and the claim to agree.
+3. **A worker that did not finish is not believed.** If the activity failed or timed out, the
+   gate writes a "needs a human" state itself and reads nothing the worker left, even a
+   `verdict.json` that a process outliving its activity wrote later.
+4. **Every rule in `state.json` decides the verdict.** Checks that were recorded and not
+   enforced (the wording of a "not affected" reason, an application change without a claimed
+   fix, the proof on the fixed version for "affected and proven") now go to the event log only.
+5. **At most ten repositories at a time**, the design's default. `LE_CHONK_MAX_PARALLEL` changes it.
+   The workflow takes the number from the intake step, so a replay decides the same way.
+6. **The fixed version comes from the advisory.** The reader asks for it and requires it to be
+   in the advisory's own text, like the identifier, the package and the function. The gate uses
+   it where it used to pick the newest wheel outside the affected range.
+7. **A pull request carries `fix.diff` and nothing else.** The proof test lives outside the work
+   copy, so it stays with the run. The version in the title is read from the work copy's
+   `requirements.txt`, not from the worker's description of its fix.
+8. **The stand-in writes the same layout**, with its verdict checked against the contract's
+   schema before it is written. It no longer has built-in advisory facts: without the run's
+   `advisory.json` it stops.
+
+Checked: 121 tests pass, among them the contract's own 24. A run in the browser on the plain
+fallback with the stand-in and the eleven-app fleet ended with eleven tiles (2 fixed, 7 with no
+reachable path found, 2 for a person), the clock, and links to the cited lines on GitHub.
+
+Not checked: a run on Mistral's hosted Workflows with this contract (no key on the machine this
+was written on), whether the live model returns the fixed version for a pasted advisory, and a
+real agent.
+
+Not done from the spec: replay of a saved run from `fixtures/`, and killing orphaned Vibe
+processes when a worker dies.

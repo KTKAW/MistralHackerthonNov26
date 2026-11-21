@@ -1,4 +1,7 @@
-"""The report step. No model call: a template filled from verdicts that passed the gate.
+"""The report step. No model call: a template filled from final states that passed the gate.
+
+Each entry it is given is a record (orchestrator/record.py): the verdict from state.json, with
+the worker's reason, path, proofs and fix from verdict.json beside it.
 
 It writes runs/<run_id>/early-warning.md, a DRAFT of the early warning under Article 14(2)(a)
 of Regulation (EU) 2024/2847 (the Cyber Resilience Act). The tool never sends it anywhere. A
@@ -21,7 +24,8 @@ import os
 import re
 from pathlib import Path
 
-from orchestrator import config
+from orchestrator import config, record
+from vulnerability_agent import contract
 
 TITLES = {
     "affected_fixed": "Affected, proven and fixed",
@@ -33,10 +37,10 @@ TO_COMPLETE = "**TO BE COMPLETED BY A PERSON**"
 def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | Path = "runs") -> str:
     """Write runs/<run_id>/early-warning.md from gate-passed verdicts only and return its text."""
     run_dir = config.run_dir(run_id, runs_root)
-    meta = _read_json(run_dir / "run.json")
-    advisory = _read_json(run_dir / "advisory.json")
+    meta = _read_json(run_dir / contract.RUN_JSON)
+    advisory = _read_json(run_dir / contract.ADVISORY_JSON)
     now = dt.datetime.now(dt.timezone.utc)
-    started = _parse_time(meta.get("started_at")) or now
+    started = _parse_time(meta.get("clock_start")) or _parse_time(_read_json(run_dir / "orchestrator.json").get("started_at")) or now
 
     checked = [v for v in gated_verdicts if isinstance(v, dict) and (v.get("gate") or {}).get("passed") is True]
     affected = [v for v in checked if v.get("verdict") in TITLES]
@@ -47,7 +51,7 @@ def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | 
 
     used = max(0, int((now - started).total_seconds() // 60))
     lines = [
-        f"# DRAFT early warning: {_text(advisory.get('id', 'advisory not read'))} in {_text(advisory.get('package', 'unknown package'))}",
+        f"# DRAFT early warning: {_text(advisory.get('advisory_id', 'advisory not read'))} in {_text(advisory.get('package', 'unknown package'))}",
         "",
         "> **Draft. Not submitted.** A tool produced this from verdicts that its gate re-checked.",
         "> A person must review it and submit it through the CRA Single Reporting Platform.",
@@ -65,7 +69,8 @@ def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | 
         "",
         "## Early warning, Article 14(2)(a)",
         "",
-        f"- **Vulnerability:** {_text(advisory.get('id', '?'))} in `{_code(advisory.get('package', '?'))}`, affected versions `{_code(advisory.get('affected_range', '?'))}`, flawed function `{_code(advisory.get('flawed_function', '?'))}`.",
+        f"- **Vulnerability:** {_text(advisory.get('advisory_id', '?'))} in `{_code(advisory.get('package', '?'))}`, affected versions `{_code(advisory.get('affected_version_range', '?'))}`, "
+        f"fixed in `{_code(advisory.get('fixed_version', '?'))}`, flawed function `{_code(advisory.get('flawed_function', '?'))}`.",
         f"- **Products found affected, each with a proof that was re-run:** {', '.join('`' + _code(v['repo']) + '`' for v in affected) or 'none'}.",
         f"- **Member States in which these products have been made available:** {TO_COMPLETE}.",
         f"- **Basis for treating the vulnerability as actively exploited:** {TO_COMPLETE}. The tool establishes whether your code can be reached, not whether anyone is exploiting the flaw.",
@@ -85,7 +90,7 @@ def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | 
             "- **Path from the entry point to the flawed function:**",
             *[f"  - `{_code(step.get('file'))}:{_text(step.get('line'))}` {_text(step.get('note'), 200)}" for step in verdict.get("path", [])],
             "- **Proof tests** (the gate re-ran them: each failed on the vulnerable state" + (" and passed on the fixed state" if verdict["verdict"] == "affected_fixed" else "") + "):",
-            *[f"  - `{_code(test_id)}`" for test_id in verdict.get("proof", [])],
+            *[f"  - `{_code(test_id)}`" for test_id in record.proof_ids(verdict)],
             f"- **Fix:** {_fix(fix)}",
             *_pull_request_line(verdict),
             f"- **Gate:** checked at {_text(gate.get('checked_at'))}; tests run inside the sandbox: {'yes' if gate.get('sandboxed') else 'NO'}.",
@@ -106,7 +111,11 @@ def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | 
         failed = [name for name, rule in (gate.get("rules") or {}).items() if rule.get("enforced") and rule.get("passed") is not True]
         claim = gate.get("original_verdict")
         repo = f"`{_code(verdict.get('repo', '?'))}`"
-        if failed:
+        if failed and claim is None:
+            # The worker never finished, or left nothing the gate could read. The orchestrator's own words say why.
+            why = "; ".join(_text((gate.get("rules") or {}).get(name, {}).get("detail", ""), 200) for name in failed)
+            lines += [f"- {repo}: no verdict from the worker ({', '.join(failed)}). {why}"]
+        elif failed:
             # A claim the gate rejected is not a result, so none of it is repeated.
             lines += [f"- {repo}: the gate rejected a claim of `{_code(claim)}` on: {', '.join(failed)}. Nothing it claimed is repeated here."]
         elif verdict.get("reason"):
@@ -122,7 +131,7 @@ def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | 
         "",
         "## Notes for the 72-hour notification, Article 14(2)(b)",
         "",
-        f"- **General nature of the vulnerability:** see `{_code(advisory.get('flawed_function', '?'))}` in the advisory {_text(advisory.get('id', '?'))}.",
+        f"- **General nature of the vulnerability:** see `{_code(advisory.get('flawed_function', '?'))}` in the advisory {_text(advisory.get('advisory_id', '?'))}.",
         f"- **Corrective or mitigating measures taken:** {'; '.join(measures) or 'none yet'}. Each fix is a draft for review, not a release.",
         f"- **Measures users can take:** {TO_COMPLETE}.",
         f"- **How sensitive you consider this information:** {TO_COMPLETE}.",
@@ -160,10 +169,10 @@ def _pull_request_line(verdict: dict) -> list[str]:
 
 
 def _fix(fix: dict) -> str:
-    if fix.get("kind") == "upgrade":
-        return f"upgrade to {_text(fix.get('target', '?'))}"
-    if fix.get("kind") == "patch":
-        return f"patch, diff file `{_code(fix.get('diff_file') or 'not named')}`"
+    """The fix as the worker described it. The change itself is in fix.diff, which the orchestrator computed."""
+    if fix.get("kind") in ("upgrade", "patch"):
+        said = _text(fix.get("detail", ""), 160)
+        return f"{fix['kind']}, in `{contract.FIX_DIFF}`" + (f". The worker's description: {said}" if said else "")
     return "none yet"
 
 

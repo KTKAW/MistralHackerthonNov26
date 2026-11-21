@@ -23,8 +23,8 @@ def new_run_id() -> str:
 
 
 class LocalOrchestrator:
-    def __init__(self, max_parallel: int = 16) -> None:
-        self.max_parallel = max_parallel
+    def __init__(self, max_parallel: int | None = None) -> None:
+        self.max_parallel = max_parallel  # None: the run's own cap, 10 unless LE_CHONK_MAX_PARALLEL says otherwise
         self._approvals: dict[str, threading.Event] = {}
         self._approved_by: dict[str, str] = {}
         self._threads: dict[str, threading.Thread] = {}
@@ -34,7 +34,8 @@ class LocalOrchestrator:
         started_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
         meta = steps.intake(run_id, advisory_text, started_at)
         self._approvals[run_id] = threading.Event()
-        thread = threading.Thread(target=self._run, args=(run_id, advisory_text, meta["repos"], bool(meta.get("pull_requests"))), name=run_id, daemon=True)
+        cap = self.max_parallel or int(meta.get("max_parallel") or config.max_parallel())
+        thread = threading.Thread(target=self._run, args=(run_id, advisory_text, meta["repos"], bool(meta.get("pull_requests")), cap), name=run_id, daemon=True)
         self._threads[run_id] = thread
         thread.start()
         return {"run_id": run_id, "started_at": meta["started_at"]}
@@ -66,10 +67,10 @@ class LocalOrchestrator:
             gated = steps.open_pull_request(run_id, gated)
         return gated
 
-    def _run(self, run_id: str, advisory_text: str, repos: list[str], pull_requests: bool = False) -> None:
+    def _run(self, run_id: str, advisory_text: str, repos: list[str], pull_requests: bool = False, cap: int = 10) -> None:
         try:
             steps.read_advisory(run_id, advisory_text)
-            with ThreadPoolExecutor(max_workers=max(1, min(self.max_parallel, len(repos) or 1))) as pool:
+            with ThreadPoolExecutor(max_workers=max(1, min(cap, len(repos) or 1))) as pool:
                 gated = list(pool.map(lambda repo: self._one_repo(run_id, repo, pull_requests), repos))
             steps.write_report(run_id, gated)
             approved = self._approvals[run_id].wait(timeout=config.APPROVAL_HOURS * 3600)
