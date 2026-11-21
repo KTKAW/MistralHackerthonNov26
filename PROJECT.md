@@ -183,6 +183,35 @@ Three things set this project apart:
 
 The test code is not in this repository yet. Its paths are hard-coded to one machine, so it needs tidying before it is added.
 
+### Voxtral Voice Input (NEW!)
+
+The project now supports **voice input for security advisories** using Mistral's Voxtral speech-to-text model. This allows security engineers to dictate advisories instead of typing them, saving valuable time during the 24-hour response window.
+
+**Features:**
+- Dictate advisories directly via browser microphone
+- Upload audio files for transcription (WAV, MP3, OGG, etc.)
+- API-based transcription using Mistral's hosted service
+- Local inference option for offline/private use (Apple Silicon with MLX)
+
+**Setup:**
+```bash
+# For API-based transcription (recommended for hackathon)
+export MISTRAL_API_KEY="your-api-key"
+pip install httpx pyaudio
+
+# For local inference (optional, requires ~8-10GB model weights)
+pip install mlx-voxtral mlx
+```
+
+**Usage:**
+1. Open http://localhost:8000
+2. Click the "🎤 Voice" button
+3. Click the microphone and start dictating
+4. Review the transcription
+5. Start the run!
+
+See [voxtral/README.md](voxtral/README.md) for detailed documentation.
+
 ### Components
 
 | Piece | Notes |
