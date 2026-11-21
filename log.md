@@ -188,3 +188,7 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 ## [2026-11-21] edit | web UI voice: continuous listening mode, rolling transcript, follow-up context
 
 ## [2026-11-21] edit | integration branch complete: 6 agent commits verified, final lint before push
+
+## [2026-11-21] edit | local-first single entrypoint run_local.sh + UI demo mode (?demo=1)
+
+- run_local.sh

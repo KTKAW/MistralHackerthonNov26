@@ -375,11 +375,23 @@ const TABS = [["timeline", "Timeline"], ["gate", "Gate checks"], ["changes", "Wh
 
 // The backend base URL: the ?api= query param, else window.KB_API_BASE, else same-origin.
 // Example: https://le-chonk.vercel.app/?api=https://1a2b3c.ngrok-free.app
-const API_BASE = (() => {
-  const fromQuery = new URLSearchParams(location.search).get("api");
-  return String(fromQuery || window.KB_API_BASE || "").replace(/\/+$/, "");
-})();
-const apiUrl = (path) => API_BASE + path;
+const QUERY = new URLSearchParams(location.search);
+const API_BASE = String(QUERY.get("api") || window.KB_API_BASE || "").replace(/\/+$/, "");
+// Demo mode (?demo=1): serve bundled sample data from web/demo/, no backend needed. Read-only.
+const DEMO = QUERY.get("demo") === "1";
+const DEMO_RUN = "demo-2026-11-21";
+const demoFile = (path) => {
+  const run = "/runs/" + DEMO_RUN;
+  const map = { "/config": "demo/config.json", "/runs": "demo/runs.json", "/scan/latest": "demo/scan-latest.json", "/brief": "demo/brief.txt" };
+  if (map[path]) return map[path];
+  if (path === run) return "demo/run.json";
+  if (path === run + "/scan") return "demo/run-scan.json";
+  if (path === run + "/events") return "demo/events.json";
+  if (path === run + "/report") return "demo/report.md";
+  if (path.startsWith(run + "/repos/")) return "demo/verdict.json";
+  return null;
+};
+const apiUrl = (path) => (DEMO ? demoFile(path) || "demo/missing.json" : API_BASE + path);
 
 let runId = decodeURIComponent(location.hash.slice(1)) || null;
 let run = null, settings = null, stream = null, lastEvent = 0, pollSoon = null;
@@ -411,6 +423,7 @@ function outLink(href, kids, title) {
   return onGitHub(href) ? el("a", { class: "link", href, target: "_blank", rel: "noopener noreferrer", title }, kids) : null;
 }
 async function api(path, body) {
+  if (DEMO && body) throw new Error("Demo mode is read-only.");
   const response = await fetch(apiUrl(path), body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
   if (!response.ok) {
     let problem = response.statusText;
@@ -451,6 +464,10 @@ function connect() {
   $("feed").replaceChildren(el("div", { class: "empty", id: "feed-empty", text: "Every step of a run shows up here as it happens." }));
   $("feed-count").textContent = "";
   if (!runId) return;
+  if (DEMO) {  // no SSE in demo mode: load the bundled event log once
+    api("/runs/" + encodeURIComponent(runId) + "/events").then((data) => (data.events || []).forEach(onEvent)).catch(() => {});
+    return;
+  }
   stream = new EventSource(apiUrl("/runs/" + encodeURIComponent(runId) + "/stream"));
   stream.onmessage = (message) => { try { onEvent(JSON.parse(message.data)); } catch (error) { /* a line that is not an event */ } };
   stream.addEventListener("end", () => { if (stream) stream.close(); stream = null; });
@@ -987,8 +1004,15 @@ api("/config").then((config) => {
   settings = config; $("orchestrator").textContent = config.orchestrator; $("fleet").textContent = config.fleet.length + " repositories in the fleet";
   $("standin").hidden = !config.stand_in_worker; renderPipeline(); renderSummary();
 }).catch(() => { $("orchestrator").textContent = "not connected"; });
+if (DEMO) {
+  document.title = "DEMO · " + document.title;
+  const banner = el("div", { id: "demo-banner", text: "DEMO MODE — bundled sample data (web/demo/). Add ?api=https://<backend> to use a live backend." });
+  banner.style.cssText = "padding:6px 12px;background:#3a2f00;color:#ffd97a;font-size:12px;text-align:center";
+  document.body.prepend(banner);
+  if (!runId) openRun(DEMO_RUN);
+}
 renderHeader(); renderPipeline(); renderSummary(); loadRuns(); pollScanLatest();
-if (runId) openRun(runId);
+if (runId && !DEMO) openRun(runId);
 setInterval(poll, 2000);
 setInterval(tick, 1000);
 setInterval(pollScanLatest, 10000);

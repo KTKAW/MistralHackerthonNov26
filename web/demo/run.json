@@ -1,0 +1,23 @@
+{
+  "run_id": "demo-2026-11-21",
+  "stage": "awaiting_approval",
+  "status": "running",
+  "started_at": "2026-11-21T09:00:00+00:00",
+  "deadline": "2026-11-22T09:00:00+00:00",
+  "advisory": { "id": "CVE-2026-96760", "package": "authlib", "affected_range": "<1.9.0", "flawed_function": "JsonWebSignature.deserialize_json()" },
+  "advisory_lookup": [{ "url": "https://osv.dev/vulnerability/GHSA-6v38-4h7w-rj9h" }],
+  "repos_total": 3,
+  "repos": ["auth-gateway", "billing-api", "session-service"],
+  "tiles": [
+    { "repo": "auth-gateway", "verdict": "affected_fixed", "gate": { "passed": true }, "reason": "Demo tile: reachable path into authlib deserialize_json()." },
+    { "repo": "billing-api", "verdict": "affected_proven", "gate": { "passed": true }, "reason": "Demo tile: proof re-run by the gate." },
+    { "repo": "session-service", "verdict": "not_affected", "gate": { "passed": true }, "reason": "Demo tile: no reachable path found." }
+  ],
+  "pending": [],
+  "counts": { "affected_fixed": 1, "affected_proven": 1, "not_affected": 1 },
+  "pull_requests": false,
+  "report_ready": true,
+  "approved_by": null,
+  "closed_at": null,
+  "error": null
+}

@@ -1,0 +1,15 @@
+{
+  "scan": {
+    "schema": "kb-scan-report/1",
+    "generated_at": "2026-11-21T16:55:00Z",
+    "total": 4,
+    "tiers": { "1": 1, "2": 1, "3": 2 },
+    "items": [
+      { "tier": "1", "cve": "CVE-2026-96760", "package": "authlib", "title": "JWS JSON serialization with empty signatures array accepted as verified (demo sample)", "source": "kev" },
+      { "tier": "2", "cve": "CVE-2026-126347", "package": "tornado", "title": "Demo feed-watch match for the tornado advisory (demo sample)", "source": "osv" },
+      { "tier": "3", "cve": "CVE-2026-126193", "package": "soupsieve", "title": "Demo feed-watch match for the soupsieve advisory (demo sample)", "source": "epss" },
+      { "tier": "3", "cve": "CVE-2026-129300", "package": "mail-parser", "title": "Demo feed-watch match for the mail-parser advisory (demo sample)", "source": "github" }
+    ],
+    "truncated": false
+  }
+}

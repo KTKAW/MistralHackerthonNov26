@@ -1,0 +1,5 @@
+{
+  "orchestrator": "le_chonk_run (demo mode — no worker connected)",
+  "fleet": ["auth-gateway", "billing-api", "session-service", "token-signer", "profile-api", "link-redirector", "docs-portal", "html-extractor", "link-checker", "mail-intake", "ticket-mailer"],
+  "stand_in_worker": true
+}

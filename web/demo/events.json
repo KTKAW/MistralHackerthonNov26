@@ -1,0 +1,10 @@
+{
+  "events": [
+    { "n": 1, "t": "2026-11-21T09:00:02+00:00", "source": "orchestrator", "kind": "start", "text": "Run started. Advisory read scheduled (demo)." },
+    { "n": 2, "t": "2026-11-21T09:00:40+00:00", "source": "orchestrator", "kind": "step", "repo": "auth-gateway", "text": "kb-scan step 0: 2 feed findings match this advisory (unverified feed data, demo)." },
+    { "n": 3, "t": "2026-11-21T09:05:11+00:00", "source": "orchestrator", "kind": "ok", "repo": "auth-gateway", "text": "Worker returned a verdict (demo)." },
+    { "n": 4, "t": "2026-11-21T09:06:30+00:00", "source": "gate", "kind": "done", "repo": "auth-gateway", "text": "Gate re-ran the proof on clean copies: passed (demo)." },
+    { "n": 5, "t": "2026-11-21T09:07:02+00:00", "source": "gate", "kind": "start", "text": "The adversarial simulator flagged nothing new for this advisory in this demo run." }
+  ],
+  "next": 5
+}

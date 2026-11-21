@@ -1,0 +1,1 @@
+Demo brief: the feed watch shows 4 unverified findings, 2 of them tier 1 or 2. This demo run has 3 of 3 repositories through the gate: one affected and fixed, one affected and proven, one with no reachable path found. A person approves before anything is sent.
