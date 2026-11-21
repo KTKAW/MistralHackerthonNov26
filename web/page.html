@@ -210,6 +210,19 @@
   .kv dt { color: var(--muted); } .kv dd { margin: 0; word-break: break-word; }
   .tl { display: grid; grid-template-columns: 58px 100px minmax(0, 1fr); gap: 8px; padding: 4px 0; font-size: 12.5px; border-bottom: 1px dashed var(--line); align-items: baseline; }
   .tl time { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  /* ---------- kb-scan feed watch */
+  .scan-tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--proven); background: var(--proven-bg); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+  .scan-note { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .scan-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; min-height: 24px; }
+  .scan-items { margin-top: 10px; display: grid; gap: 6px; max-height: 320px; overflow: auto; }
+  .scan-item { border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; background: var(--surface-2); display: grid; gap: 2px; min-width: 0; }
+  .scan-item .top-line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .tier-chip { font-family: var(--mono); font-size: 11px; font-weight: 700; border-radius: 5px; padding: 1px 6px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); flex: none; }
+  .scan-item .cve { font-family: var(--mono); font-size: 11.5px; font-weight: 600; word-break: break-all; }
+  .scan-item .pkg { font-family: var(--mono); font-size: 11px; color: var(--muted); word-break: break-all; }
+  .scan-item .title { font-size: 12px; }
+  .scan-item .src-line { font-size: 10.5px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
 </style>
 </head>
 <body>
@@ -231,6 +244,7 @@
   <symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 8 8"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></symbol>
   <symbol id="i-pull" viewBox="0 0 24 24"><circle cx="6.5" cy="6" r="2.2"/><circle cx="6.5" cy="18" r="2.2"/><circle cx="17.5" cy="18" r="2.2"/><path d="M6.5 8.2v7.600M17.500 15.800V10a3 3 0 0 0-3-3h-2.500M13.500 4.500 11 7l2.500 2.500"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/></symbol>
 </svg>
 
 <header class="top">
@@ -280,6 +294,33 @@
     <div class="grid" id="grid"></div>
   </section>
 
+  <section class="row two" id="scan-row" style="align-items:start">
+    <div class="panel">
+      <h2><svg class="icon"><use href="#i-layers"/></svg>Feed watch · kb-scan <span class="scan-tag">unverified feed data</span> <span class="hint" id="scan-latest-meta"></span></h2>
+      <p class="scan-note">The continuous poller's merged feed scan. Raw feed matches, not verdicts: nothing here has been through the gate.</p>
+      <div class="scan-meta" id="scan-latest-tiers"></div>
+      <div class="scan-items" id="scan-latest-items"><div class="empty">The scan engine has not run yet, or the backend is unreachable.</div></div>
+    </div>
+    <div class="panel" id="scan-run-panel" hidden>
+      <h2><svg class="icon"><use href="#i-pulse"/></svg>kb-scan triage for this run <span class="scan-tag">unverified feed data</span> <span class="hint" id="scan-run-meta"></span></h2>
+      <p class="scan-note">The engine's triage handoff for this run. Feed data only; the gate decides what a run may claim.</p>
+      <div class="scan-meta" id="scan-run-tiers"></div>
+      <div class="scan-items" id="scan-run-items"><div class="empty">No triage handoff for this run yet.</div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="voice-panel">
+    <h2><svg class="icon"><use href="#i-mic"/></svg>Voice
+      <span class="hint">GUI path: your browser's Web Speech API. The server-side Voxtral TTS brief stays the CLI path (<span class="mono">python3 tools/scan.py brief</span>, also served by <span class="mono">kb-scan serve</span> on 127.0.0.1:8787).</span>
+    </h2>
+    <div class="actions">
+      <button id="speak-brief" title="Fetch the ≤90-word kb-scan brief and speak it with the browser"><svg class="icon"><use href="#i-pulse"/></svg>Speak brief</button>
+      <button id="voice-ask" hidden title="Ask a question with the microphone"><svg class="icon"><use href="#i-mic"/></svg>Ask by voice</button>
+      <span class="muted" id="voice-status"></span>
+    </div>
+    <p class="scan-note" id="voice-transcript">Voice queries about “threat”, “scan”, “brief” or what is “new” refresh the feed watch and this run, then answer out loud. If this browser has no speech recognition, the voice button stays hidden.</p>
+  </section>
+
   <section class="row two" style="align-items:start">
     <div class="panel">
       <h2><svg class="icon"><use href="#i-doc"/></svg>Draft early warning <span class="hint">A person approves it here and submits it themselves. This tool sends nothing.</span></h2>
@@ -321,6 +362,14 @@ const STAGES = { starting: "starting", reading_advisory: "reading the advisory",
 const SOURCES = { orchestrator: "orchestrator", gate: "gate", worker: "worker" };
 const TABS = [["timeline", "Timeline"], ["gate", "Gate checks"], ["changes", "What it changed"], ["claim", "The worker's claim"], ["raw", "Raw output"]];
 
+// The backend base URL: the ?api= query param, else window.KB_API_BASE, else same-origin.
+// Example: https://le-chonk.vercel.app/?api=https://1a2b3c.ngrok-free.app
+const API_BASE = (() => {
+  const fromQuery = new URLSearchParams(location.search).get("api");
+  return String(fromQuery || window.KB_API_BASE || "").replace(/\/+$/, "");
+})();
+const apiUrl = (path) => API_BASE + path;
+
 let runId = decodeURIComponent(location.hash.slice(1)) || null;
 let run = null, settings = null, stream = null, lastEvent = 0, pollSoon = null;
 let events = [], perRepo = {}, cards = new Map();
@@ -351,7 +400,7 @@ function outLink(href, kids, title) {
   return onGitHub(href) ? el("a", { class: "link", href, target: "_blank", rel: "noopener noreferrer", title }, kids) : null;
 }
 async function api(path, body) {
-  const response = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
+  const response = await fetch(apiUrl(path), body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : undefined);
   if (!response.ok) {
     let problem = response.statusText;
     try { const data = await response.json(); problem = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail); } catch (error) { /* keep the status text */ }
@@ -391,7 +440,7 @@ function connect() {
   $("feed").replaceChildren(el("div", { class: "empty", id: "feed-empty", text: "Every step of a run shows up here as it happens." }));
   $("feed-count").textContent = "";
   if (!runId) return;
-  stream = new EventSource("/runs/" + encodeURIComponent(runId) + "/stream");
+  stream = new EventSource(apiUrl("/runs/" + encodeURIComponent(runId) + "/stream"));
   stream.onmessage = (message) => { try { onEvent(JSON.parse(message.data)); } catch (error) { /* a line that is not an event */ } };
   stream.addEventListener("end", () => { if (stream) stream.close(); stream = null; });
 }
@@ -570,16 +619,17 @@ async function poll() {
     run = fresh;
     if (moved) loadRuns();
     renderHeader(); renderPipeline(); renderSummary(); renderGrid(); tick();
+    pollScanRun();
     if (reportShown && run.report_ready) await loadReport();
     if (drawerRepo) await loadDetail();
   } catch (error) { showError(error.message); }
 }
 async function loadReport() {
-  try { const response = await fetch("/runs/" + encodeURIComponent(runId) + "/report"); if (response.ok) $("report").textContent = await response.text(); } catch (error) { /* shown on the next poll */ }
+  try { const response = await fetch(apiUrl("/runs/" + encodeURIComponent(runId) + "/report")); if (response.ok) $("report").textContent = await response.text(); } catch (error) { /* shown on the next poll */ }
 }
 function openRun(id) {
   runId = id; run = null; reportShown = false; $("report-box").hidden = true; $("toggle-report").textContent = "Show the draft"; showError("");
-  closeDrawer(); connect(); renderHeader(); renderPipeline(); renderSummary(); tick(); poll(); loadRuns();
+  closeDrawer(); connect(); renderHeader(); renderPipeline(); renderSummary(); tick(); poll(); pollScanRun(); loadRuns();
 }
 async function loadRuns() {
   try {
@@ -587,6 +637,120 @@ async function loadRuns() {
     $("runs").replaceChildren(el("option", { value: "", text: list.length ? "Recent runs" : "No runs yet" }),
       ...list.map((item) => el("option", { value: item.run_id, selected: item.run_id === runId, text: item.run_id + " · " + (STAGES[item.stage] || item.stage || "") })));
   } catch (error) { /* the list is a convenience */ }
+}
+
+// ---------------------------------------------------------------- kb-scan feed watch
+// Feed/scan output is untrusted input: the server already size-caps and sanitises it; here the
+// rendered list is capped again and every string goes on the page as text, never as markup.
+const SCAN_MAX_ITEMS = 12;
+let scanLatest = null;
+function scanItemNode(item) {
+  return el("div", { class: "scan-item" },
+    el("div", { class: "top-line" },
+      el("span", { class: "tier-chip", text: "tier " + (item.tier === null || item.tier === undefined ? "?" : String(item.tier)) }),
+      item.cve ? el("span", { class: "cve", text: String(item.cve) }) : null,
+      item.package ? el("span", { class: "pkg", text: String(item.package) }) : null),
+    item.title ? el("div", { class: "title", text: String(item.title) }) : null,
+    item.source ? el("div", { class: "src-line", text: String(item.source) }) : null);
+}
+function renderScan(boxId, tiersId, metaId, summary, emptyText) {
+  const box = $(boxId), tiers = $(tiersId), meta = $(metaId);
+  if (!summary || !Array.isArray(summary.items)) {
+    box.replaceChildren(el("div", { class: "empty", text: emptyText }));
+    tiers.replaceChildren(); meta.textContent = "";
+    return;
+  }
+  meta.textContent = summary.generated_at ? "scanned " + String(summary.generated_at) : "";
+  const tierChips = Object.entries(summary.tiers || {}).sort(([a], [b]) => String(a).localeCompare(String(b), undefined, { numeric: true }))
+    .map(([tier, count]) => el("span", { class: "chip v-queued", text: "tier " + tier + ": " + count }));
+  tiers.replaceChildren(el("span", { class: "chip v-live", text: String(summary.total) + " findings" }), ...tierChips);
+  const shown = summary.items.slice(0, SCAN_MAX_ITEMS);
+  const hidden = Math.max(0, (summary.total || shown.length) - shown.length);
+  box.replaceChildren(...shown.map(scanItemNode),
+    hidden > 0 ? el("div", { class: "empty", text: "+" + hidden + " more in the feed scan, not shown" }) : null);
+}
+async function pollScanLatest() {
+  try {
+    scanLatest = (await api("/scan/latest")).scan || null;
+    renderScan("scan-latest-items", "scan-latest-tiers", "scan-latest-meta", scanLatest, "The scan engine has not run yet.");
+  } catch (error) {
+    scanLatest = null;
+    renderScan("scan-latest-items", "scan-latest-tiers", "scan-latest-meta", null, "Cannot reach the backend for the feed scan: " + error.message);
+  }
+}
+async function pollScanRun() {
+  const panel = $("scan-run-panel");
+  if (!runId) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const asked = runId;
+  try {
+    const triage = (await api("/runs/" + encodeURIComponent(asked) + "/scan")).triage || null;
+    if (asked !== runId) return;
+    renderScan("scan-run-items", "scan-run-tiers", "scan-run-meta", triage, "No triage handoff for this run yet.");
+  } catch (error) {
+    if (asked !== runId) return;
+    renderScan("scan-run-items", "scan-run-tiers", "scan-run-meta", null, "Cannot reach the backend: " + error.message);
+  }
+}
+
+// ---------------------------------------------------------------- voice (GUI path)
+// The server-side Voxtral TTS brief stays the CLI path (`python3 tools/scan.py brief`, served by
+// `kb-scan serve` on 127.0.0.1:8787). In the GUI the browser speaks with the Web Speech API.
+const SCAN_SERVE_BASE = String(window.KB_SCAN_BASE || "http://127.0.0.1:8787").replace(/\/+$/, "");
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null, listening = false;
+function setVoiceStatus(text) { $("voice-status").textContent = text || ""; }
+function speak(text) {
+  if (!("speechSynthesis" in window)) { setVoiceStatus("This browser has no speechSynthesis, so it cannot speak."); return; }
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(String(text).slice(0, 600));
+  utterance.onend = () => setVoiceStatus("Spoken.");
+  utterance.onerror = () => setVoiceStatus("The browser could not speak that.");
+  window.speechSynthesis.speak(utterance);
+}
+async function fetchBriefText() {
+  // First the backend proxy when one exists (GET <api>/brief), else kb-scan serve's own /brief.
+  const candidates = [apiUrl("/brief")];
+  if (SCAN_SERVE_BASE + "/brief" !== candidates[0]) candidates.push(SCAN_SERVE_BASE + "/brief");
+  const problems = [];
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) { const text = (await response.text()).trim(); if (text) return text; problems.push(url + ": empty"); }
+      else problems.push(url + ": HTTP " + response.status);
+    } catch (error) { problems.push(url + ": " + error.message); }
+  }
+  throw new Error("No brief available (" + problems.join("; ") + ").");
+}
+async function startListening() {
+  if (!SpeechRecognitionCtor || listening) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((track) => track.stop());
+  } catch (error) { setVoiceStatus("Microphone refused: " + error.message); return; }
+  recognition = new SpeechRecognitionCtor();
+  recognition.lang = navigator.language || "en-US";
+  recognition.interimResults = false;
+  recognition.onresult = (event) => { handleVoiceQuery(event.results[event.results.length - 1][0].transcript); };
+  recognition.onerror = (event) => { listening = false; $("voice-ask").textContent = "Ask by voice"; setVoiceStatus("Voice input error: " + event.error); };
+  recognition.onend = () => { listening = false; $("voice-ask").textContent = "Ask by voice"; };
+  listening = true; $("voice-ask").textContent = "Listening…";
+  setVoiceStatus("Listening. Ask about threats, the scan, the brief, or what is new.");
+  recognition.start();
+}
+async function handleVoiceQuery(text) {
+  $("voice-transcript").textContent = "You asked: “" + String(text).slice(0, 300) + "”";
+  const question = String(text).toLowerCase();
+  if (!["threat", "scan", "brief", "new"].some((word) => question.includes(word))) {
+    const line = "Ask me about threats, the scan, the brief, or what is new, and I will refresh the feed watch and this run.";
+    setVoiceStatus(line); speak(line); return;
+  }
+  setVoiceStatus("Refreshing the feed watch and this run…");
+  await Promise.allSettled([pollScanLatest(), poll(), pollScanRun()]);
+  const total = scanLatest && typeof scanLatest.total === "number" ? scanLatest.total : 0;
+  const gated = run ? run.tiles.length : 0, repos = run ? run.repos_total : 0;
+  const line = "Feed watch shows " + total + " unverified findings. This run has " + gated + " of " + repos + " repositories through the gate.";
+  setVoiceStatus(line); speak(line);
 }
 
 // ---------------------------------------------------------------- under the hood
@@ -678,7 +842,7 @@ function renderDrawerBody() {
   body.replaceChildren(
     el("dl", { class: "kv" }, el("dt", { text: "Worker time" }), el("dd", { text: shown(usage.seconds) + " s" }),
       el("dt", { text: "Tokens, cost, steps" }), el("dd", { text: [usage.tokens, usage.cost_usd, usage.steps].map(shown).join(" · ") }),
-      el("dt", { text: "Gated verdict file" }), el("dd", {}, detail.checked ? el("a", { href: "/runs/" + encodeURIComponent(runId) + "/repos/" + encodeURIComponent(drawerRepo) + "/verdict.json", target: "_blank", rel: "noopener", text: "verdict.json" }) : "not yet")),
+      el("dt", { text: "Gated verdict file" }), el("dd", {}, detail.checked ? el("a", { href: apiUrl("/runs/" + encodeURIComponent(runId) + "/repos/" + encodeURIComponent(drawerRepo) + "/verdict.json"), target: "_blank", rel: "noopener", text: "verdict.json" }) : "not yet")),
     detail.gate_log ? codeBox("gate log", "the gate's own commands and their output, last part", detail.gate_log) : el("div", { class: "empty", text: "The gate ran no commands for this repository." }),
     detail.export ? codeBox("worker export", "what the worker left behind", detail.export) : null);
 }
@@ -709,14 +873,24 @@ $("filters").replaceChildren(...[["all", "All"], ["orchestrator", "Orchestrator"
     for (const button of $("filters").children) button.className = button === event.currentTarget ? "on" : "";
   } })));
 
+$("speak-brief").addEventListener("click", async () => {
+  setVoiceStatus("Fetching the brief…");
+  try { const brief = await fetchBriefText(); setVoiceStatus("Brief: " + brief.slice(0, 120) + (brief.length > 120 ? "…" : "")); speak(brief); }
+  catch (error) { setVoiceStatus(error.message); }
+});
+if (SpeechRecognitionCtor && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) $("voice-ask").hidden = false;
+$("voice-ask").addEventListener("click", () => { listening ? (recognition && recognition.stop()) : startListening(); });
+if (!("speechSynthesis" in window)) { $("speak-brief").disabled = true; $("voice-status").textContent = "This browser has no speechSynthesis."; }
+
 api("/config").then((config) => {
   settings = config; $("orchestrator").textContent = config.orchestrator; $("fleet").textContent = config.fleet.length + " repositories in the fleet";
   $("standin").hidden = !config.stand_in_worker; renderPipeline(); renderSummary();
 }).catch(() => { $("orchestrator").textContent = "not connected"; });
-renderHeader(); renderPipeline(); renderSummary(); loadRuns();
+renderHeader(); renderPipeline(); renderSummary(); loadRuns(); pollScanLatest();
 if (runId) openRun(runId);
 setInterval(poll, 2000);
 setInterval(tick, 1000);
+setInterval(pollScanLatest, 10000);
 </script>
 </body>
 </html>

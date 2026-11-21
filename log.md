@@ -152,3 +152,8 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - tools/scan/src/serve.rs
 - tools/scan/src/swarm.rs
 - tools/scan/tests/cli.rs
+
+## [2026-11-21] edit | web UI: API-base config, kb-scan feed-watch tiles, voice interface, Vercel static deploy notes
+
+- vercel.json
+- tools/ (9 files)
