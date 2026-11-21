@@ -19,3 +19,7 @@ Single-context layout: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs
 Agent skills live in `.vibe/skills/` (from [mattpocock/skills](https://github.com/mattpocock/skills)). Run `/setup-matt-pocock-skills` to reconfigure the issue tracker, triage labels, or domain doc layout. Update skills by re-copying from the upstream repo.
 
 `.vibe/`, `AGENTS.md`, `docs/agents/` and `.scratch/` are tracked in git and shared with the team.
+
+## Branching
+
+`dev-matteo` is the main development branch for Matteo's work. Branch every feature off it (`feat/<ticket-or-topic>`) and merge back into `dev-matteo` when the feature is done. Don't build features on other branches.
