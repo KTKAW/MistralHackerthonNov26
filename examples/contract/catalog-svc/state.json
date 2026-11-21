@@ -1,0 +1,33 @@
+{
+  "status": "final",
+  "verdict": "not_affected",
+  "repo": "catalog-svc",
+  "advisory": {
+    "advisory_id": "CVE-2026-96760",
+    "package": "authlib",
+    "affected_version_range": "<1.9.0",
+    "fixed_version": "1.9.0",
+    "flawed_function": "authlib.jose.JsonWebSignature.verify"
+  },
+  "gate": [
+    {
+      "rule": "no_diff_in_src",
+      "passed": true,
+      "detail": "src/ identical to the fleet copy; fix.diff empty"
+    },
+    {
+      "rule": "cited_path_exists",
+      "passed": true,
+      "detail": "src/catalog/cache.py:18 and src/catalog/app.py:7 exist in the work copy"
+    }
+  ],
+  "final_at": "2026-11-21T09:58:03Z",
+  "usage": {
+    "input_tokens": 52110,
+    "output_tokens": 1980,
+    "cost_usd": 0.05,
+    "seconds": 159,
+    "steps": 20
+  },
+  "proof_output": {}
+}

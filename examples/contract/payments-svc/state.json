@@ -1,0 +1,50 @@
+{
+  "status": "final",
+  "verdict": "affected_fixed",
+  "repo": "payments-svc",
+  "advisory": {
+    "advisory_id": "CVE-2026-96760",
+    "package": "authlib",
+    "affected_version_range": "<1.9.0",
+    "fixed_version": "1.9.0",
+    "flawed_function": "authlib.jose.JsonWebSignature.verify"
+  },
+  "gate": [
+    {
+      "rule": "proof_fails_on_vulnerable",
+      "passed": true,
+      "detail": "proof/test_forged_cookie.py::test_forged_cookie_accepted failed on the clean vulnerable baseline"
+    },
+    {
+      "rule": "proof_passes_on_fixed",
+      "passed": true,
+      "detail": "same test passed on the fixed baseline (authlib 1.9.0)"
+    },
+    {
+      "rule": "no_test_pass_to_fail_between_baselines",
+      "passed": true,
+      "detail": "18 passed / 0 failed on vulnerable, 19 passed / 0 failed on fixed"
+    },
+    {
+      "rule": "existing_tests_byte_identical",
+      "passed": true,
+      "detail": "all files under src/tests/ identical to the fleet copy"
+    },
+    {
+      "rule": "installed_library_matches_wheelhouse",
+      "passed": true,
+      "detail": "venv site-packages authlib 1.9.0 matches the wheelhouse wheel"
+    }
+  ],
+  "final_at": "2026-11-21T09:41:12Z",
+  "usage": {
+    "input_tokens": 41230,
+    "output_tokens": 2210,
+    "cost_usd": 0.06,
+    "seconds": 152,
+    "steps": 16
+  },
+  "proof_output": {
+    "proof/test_forged_cookie.py::test_forged_cookie_accepted": "FAILED proof/test_forged_cookie.py::test_forged_cookie_accepted - AssertionError: forged cookie accepted on authlib 1.8.0 (1 failed in 0.42s)"
+  }
+}

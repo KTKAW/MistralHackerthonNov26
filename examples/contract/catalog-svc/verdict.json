@@ -1,0 +1,28 @@
+{
+  "verdict": "not_affected",
+  "reason": "No reachable path found: catalog-svc reads Authlib only to build unsigned JWS payloads for its own cache keys; JsonWebSignature.verify is never called, so the signature-check bypass cannot be triggered by an outside caller.",
+  "path": [
+    {
+      "file": "src/catalog/cache.py",
+      "line": 18,
+      "note": "the only authlib use: JsonWebSignature.sign for internal cache keys; verify is never called"
+    },
+    {
+      "file": "src/catalog/app.py",
+      "line": 7,
+      "note": "service entry point; no route reaches a signature verification"
+    }
+  ],
+  "proof": [],
+  "fix": {
+    "kind": "none",
+    "detail": "No change: src/ is identical to the fleet copy, so the orchestrator-computed fix.diff is empty. Upgrade advice goes to follow_ups."
+  },
+  "suite": {
+    "before": { "passed": 11, "failed": 0 },
+    "after": { "passed": 11, "failed": 0 }
+  },
+  "follow_ups": [
+    "Consider upgrading authlib to 1.9.0 anyway during the next dependency pass."
+  ]
+}
