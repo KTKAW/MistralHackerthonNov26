@@ -100,22 +100,22 @@ recoverable on restart by scanning `runs/` + `run.json`.
 
 ## 6. Implementation steps (commit after each, heredoc format from COORDINATION.md)
 
-- [ ] **G1 — skeleton.** `worker/ui.py` with app factory, `GET /api/health`,
+- [x] **G1 — skeleton.** `worker/ui.py` with app factory, `GET /api/health`,
       static mount, port 8001; `worker/static/index.html` placeholder. Run it with
       the wheelhouse venv; commit.
-- [ ] **G2 — runs scanner + read API.** `GET /api/runs`, `GET /api/runs/{id}/{repo}`
+- [x] **G2 — runs scanner + read API.** `GET /api/runs`, `GET /api/runs/{id}/{repo}`
       (verdict/export/advisory/hook stats/git summary). Commit.
-- [ ] **G3 — frontend shell.** Tabs + runs grid with 2 s polling + verdict badges.
+- [x] **G3 — frontend shell.** Tabs + runs grid with 2 s polling + verdict badges.
       Commit.
-- [ ] **G4 — live hook audit.** SSE endpoint tailing `hook.log`; audit table with
+- [x] **G4 — live hook audit.** SSE endpoint tailing `hook.log`; audit table with
       original→rewritten, deny highlighting, douane-coverage % chip. Commit.
-- [ ] **G5 — verdict & diff views.** Run-detail tab: path chain, file viewer
+- [x] **G5 — verdict & diff views.** Run-detail tab: path chain, file viewer
       (confined, `.env` refused), suite bars, git diff panel. Commit.
-- [ ] **G6 — controls.** `POST /api/runs` (subprocess + `run.json` + pid),
+- [x] **G6 — controls.** `POST /api/runs` (subprocess + `run.json` + pid),
       `/stop` (SIGTERM process group), `/validate`. Commit.
-- [ ] **G7 — playground + policy.** `POST /api/playground` via `douane` in
+- [x] **G7 — playground + policy.** `POST /api/playground` via `douane` in
       `runs/ui-scratch/`, A3 probe buttons, `GET /api/policy`. Commit.
-- [ ] **G8 — tests + e2e.** `tests/test_ui.py` (starlette TestClient + httpx,
+- [x] **G8 — tests + e2e.** `tests/test_ui.py` (starlette TestClient + httpx,
       both in wheelhouse): seed a fake `runs/` in tmp_path; assert card API,
       file-endpoint refusals (`.env`, `..` traversal), validate endpoint, playground
       deny of `curl` (skipUnless darwin). Then one real pass:
