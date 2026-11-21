@@ -56,6 +56,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -72,16 +73,30 @@ DEFAULT_BIN = SCAN_DIR / "target" / "x86_64-unknown-linux-musl" / "release" / "k
 DEFAULT_REPORT_OUT = ROOT / "advisories" / "scan-latest.md"
 TARGET = "x86_64-unknown-linux-musl"
 
+# Hosts the engine may ever contact — keep in sync with the engine's compiled-in allowlist
+# (`kb-scan feeds`): the 5 feed hosts plus github.com for the git sync shard.
+ALLOWLISTED_HOSTS = (
+    "www.cisa.gov", "api.osv.dev", "api.github.com", "services.nvd.nist.gov", "api.first.org",
+    "github.com",
+)
+
 # The tested bwrap shape from tools/scan/bwrap.example.sh (bubblewrap 0.11.1, 2026-11-21). "{repo}" and "{out}"
 # are substituted by the wrapper; the env is scrubbed and only PATH is passed through.
+# /etc is bound selectively: TLS roots from the host, and a generated hosts file (see
+# write_sandbox_etc) because WSL's DNS proxy does not answer inside bwrap — getaddrinfo
+# resolves the allowlisted hosts from `files` first, so no DNS is needed in the sandbox.
 BWRAP_TEMPLATE = [
     "bwrap",
     "--clearenv", "--setenv", "PATH", "/usr/bin:/bin",
+    "--setenv", "KB_SCAN_IN_SANDBOX", "1",
     "--ro-bind", "/usr", "/usr",
     "--symlink", "usr/bin", "/bin",
     "--symlink", "usr/lib", "/lib",
     "--symlink", "usr/lib64", "/lib64",
-    "--ro-bind", "/etc", "/etc",
+    "--ro-bind", "/etc/ssl", "/etc/ssl",
+    "--ro-bind", "{etc_hosts}", "/etc/hosts",
+    "--ro-bind", "{etc_resolv}", "/etc/resolv.conf",
+    "--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf",
     "--proc", "/proc",
     "--dev", "/dev",
     "--ro-bind", "{repo}", "{repo}",
@@ -247,6 +262,33 @@ def out_dir_for(config_path: str | None) -> Path:
 # ---------------------------------------------------------------- sandboxing
 
 
+def write_sandbox_etc(out_dir: Path) -> tuple[Path, Path]:
+    """Resolve the allowlisted hosts on the host and write a sandbox /etc/hosts + stub resolv.conf.
+
+    Inside bwrap on WSL the DNS proxy does not answer, so resolution must come from `files`.
+    Only the engine's compiled-in allowlist is resolvable in the sandbox — everything else
+    still fails closed (and the engine's own URL allowlist rejects anything else anyway).
+    """
+    etc = out_dir / "sandbox-etc"
+    etc.mkdir(parents=True, exist_ok=True)
+    lines = ["127.0.0.1 localhost", "::1 localhost ip6-localhost ip6-loopback"]
+    for host in ALLOWLISTED_HOSTS:
+        try:
+            infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+            for info in infos:
+                addr = info[4][0]
+                if any(addr in line for line in lines):
+                    continue
+                lines.append(f"{addr} {host}")
+        except OSError:
+            pass  # unresolvable on the host: leave it out; the engine will record the feed error
+    hosts = etc / "hosts"
+    hosts.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    resolv = etc / "resolv.conf"
+    resolv.write_text("# DNS is not available in the sandbox; hosts are pinned in /etc/hosts\nnameserver 127.0.0.1\n", encoding="utf-8")
+    return hosts, resolv
+
+
 def sandbox_command(
     binary: Path,
     engine_argv: list[str],
@@ -264,7 +306,7 @@ def sandbox_command(
                 "Local debugging only; never in production.",
                 file=sys.stderr,
             )
-            return [str(binary), *engine_argv]
+            return [str(binary), *engine_argv, "--allow-unsandboxed"]
         print(
             f"refusing to run `kb-scan {engine_argv[0]}` without a sandbox: {template[0]!r} not found on PATH. "
             "Network-touching subcommands fail closed.",
@@ -281,10 +323,18 @@ def sandbox_command(
     for directory in writable:
         directory.mkdir(parents=True, exist_ok=True)
     command = [sandbox_bin]
+    hosts, resolv = write_sandbox_etc(writable[0])
     for token in template[1:]:
-        command.append(token.replace("{repo}", repo).replace("{out}", str(writable[0])))
+        command.append(
+            token.replace("{repo}", repo)
+            .replace("{out}", str(writable[0]))
+            .replace("{etc_hosts}", str(hosts))
+            .replace("{etc_resolv}", str(resolv))
+        )
     for directory in extra_writable:
         command += ["--bind", str(directory), str(directory)]
+    if allow_unsandboxed:
+        engine_argv = [*engine_argv, "--allow-unsandboxed"]
     command += ["--", str(binary), *engine_argv]
     print(f"running kb-scan under {template[0]} (repo read-only, only the out dir writable)", file=sys.stderr)
     return command
@@ -1116,7 +1166,7 @@ def cmd_selftest(args: argparse.Namespace) -> int:
         else:
             check("missing bwrap fails closed without the flag", wrapped is None)
             check("missing bwrap runs with --allow-unsandboxed",
-                  sandbox_command(stub, ["scan"], None, None, allow_unsandboxed=True) == [str(stub), "scan"])
+                  sandbox_command(stub, ["scan"], None, None, allow_unsandboxed=True) == [str(stub), "scan", "--allow-unsandboxed"])
     finally:
         if old is None:
             del os.environ["KB_SCAN_BIN"]

@@ -130,3 +130,11 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - tools/scan/src/scan.rs
 - tools/scan/tests/cli.rs
 - tools/scan/tests/simulate/README.md
+
+## [2026-11-21] edit | sandbox-etc: pin allowlisted hosts in bwrap (WSL DNS dead inside), align config.example.json + bwrap.example.sh with BWRAP_TEMPLATE
+
+- tools/scan.py
+- tools/scan/ORCHESTRATION.md
+- tools/scan/bwrap.example.sh
+- tools/scan/config.example.json
+- tools/scan/patches/gate-sim-triage.patch.md

@@ -65,17 +65,14 @@ team's Le Chonk pipeline (see `system.md`):
 kb-scan version
 kb-scan self-test
 kb-scan feeds                                   # list feed endpoints + the host allowlist
-kb-scan sync   [--repo DIR] [--out FILE] [--pretty]                 # one git poll → sync report JSON on stdout
-kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max-filesize N]   # one scan pass → report JSON on stdout
+kb-scan sync   [--repo DIR] [--out FILE] [--pretty] [--allow-unsandboxed]
+kb-scan scan   [--config FILE] [--inventory FILE] [--out FILE] [--pretty] [--max-filesize BYTES] [--allow-unsandboxed]
 kb-scan watch  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
-                  [--shard NAME] [--force] [--stop-file PATH] [--allow-unsandboxed]
-                                                    # continuous: each cycle runs sync then scan,
-                                                    # writes <out-dir>/reports/<ts>-sync.json and <ts>-scan.json
-                                                    # plus atomically-updated latest-sync.json / latest.json
-kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--run-id ID]
-                  [--force] [--stop-file PATH] [--allow-unsandboxed]   # supervisor: spawns one watch --shard per shard
-kb-scan merge  [--out-dir DIR] [--out FILE]     # fold shards/*/latest.json into one kb-scan-report/1
-kb-scan serve  [--out-dir DIR] [--addr 127.0.0.1:8787] [--allow-non-localhost]   # localhost query API
+                 [--force] [--stop-file FILE] [--max-filesize BYTES] [--shard NAME] [--allow-unsandboxed]
+kb-scan swarm  [--config FILE] [--interval SECS] [--max-runs N] [--out-dir DIR] [--pretty]
+                 [--force] [--stop-file FILE] [--run-id ID] [--allow-unsandboxed]
+kb-scan merge  [--out-dir DIR] [--out FILE] [--pretty]
+kb-scan serve  --out-dir DIR [--addr 127.0.0.1:8787] [--allow-non-localhost]
 ```
 
 Exit codes: 0 ok · 2 usage/config error · 3 feed/git error (partial results still reported) · 4 lock held by another instance.
@@ -94,7 +91,7 @@ Config file (strict: unknown keys are an error; all keys optional, defaults appl
   "git_remote": "origin",
   "http_timeout_secs": 60,
   "max_body_bytes": 8388608,
-  "sandbox_cmd": ["bwrap", "--ro-bind", "{repo}", "{repo}", "--bind", "{out}", "{out}", "--dev", "/dev", "--proc", "/proc", "--chdir", "{repo}", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin"],
+  "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "KB_SCAN_IN_SANDBOX", "1", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc/ssl", "/etc/ssl", "--ro-bind", "{etc_hosts}", "/etc/hosts", "--ro-bind", "{etc_resolv}", "/etc/resolv.conf", "--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "{repo}", "{repo}", "--bind", "{out}", "{out}", "--chdir", "{repo}"],
   "epss_threshold": 0.5,
   "kev_recent_days": 30,
   "feeds": { "kev": true, "osv": true, "github": true, "epss": true, "nvd": false }

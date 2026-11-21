@@ -9,5 +9,5 @@
   "epss_threshold": 0.5,
   "kev_recent_days": 30,
   "feeds": { "kev": true, "osv": true, "github": true, "epss": true, "nvd": false },
-  "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc", "/etc", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "{repo}", "{repo}", "--bind", "{out}", "{out}", "--chdir", "{repo}"]
+  "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "KB_SCAN_IN_SANDBOX", "1", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc/ssl", "/etc/ssl", "--ro-bind", "{etc_hosts}", "/etc/hosts", "--ro-bind", "{etc_resolv}", "/etc/resolv.conf", "--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "{repo}", "{repo}", "--bind", "{out}", "{out}", "--chdir", "{repo}"]
 }

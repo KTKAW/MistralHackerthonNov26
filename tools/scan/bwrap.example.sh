@@ -15,10 +15,15 @@
 # system /bin, /lib and /lib64 are symlinks into /usr, so they are recreated
 # with --symlink instead of being bind-mounted.
 #
+# /etc is bound selectively, not whole: TLS roots from the host, plus a
+# generated /etc/hosts that pins the engine's allowlisted hosts (on WSL the DNS
+# proxy does not answer inside bwrap, so resolution must come from `files` —
+# the same trick tools/scan.py's write_sandbox_etc uses). Everything else fails
+# closed. This mirrors BWRAP_TEMPLATE in tools/scan.py.
+#
 # Usage:
-#   tools/scan/bwrap.example.sh self-test
-#   tools/scan/bwrap.example.sh scan --inventory tools/scan/inventory.example.json
-#   tools/scan/bwrap.example.sh watch --interval 3600 --out-dir tools/scan/out
+#   tools/scan/bwrap.example.sh scan --inventory tools/scan/inventory.example.json --out /tmp/report.json
+#   tools/scan/bwrap.example.sh watch --interval 3600
 #
 # Env overrides: REPO, OUT, KB_SCAN_BIN.
 
@@ -28,14 +33,31 @@ REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 OUT="${OUT:-$REPO/tools/scan/out}"
 KB_SCAN_BIN="${KB_SCAN_BIN:-$REPO/tools/scan/target/x86_64-unknown-linux-musl/release/kb-scan}"
 
-mkdir -p "$OUT"
+mkdir -p "$OUT/sandbox-etc"
+
+HOSTS_FILE="$OUT/sandbox-etc/hosts"
+{
+  echo "127.0.0.1 localhost"
+  echo "::1 localhost ip6-localhost ip6-loopback"
+  for h in www.cisa.gov api.osv.dev api.github.com services.nvd.nist.gov api.first.org github.com; do
+    getent ahosts "$h" 2>/dev/null | awk '{print $1, "'"$h"'"}' | sort -u || true
+  done
+} > "$HOSTS_FILE"
+printf '# DNS is not available in the sandbox; hosts are pinned in /etc/hosts\nnameserver 127.0.0.1\n' \
+  > "$OUT/sandbox-etc/resolv.conf"
 
 exec bwrap \
+  --clearenv \
+  --setenv PATH /usr/bin:/bin \
+  --setenv KB_SCAN_IN_SANDBOX 1 \
   --ro-bind /usr /usr \
   --symlink usr/bin /bin \
   --symlink usr/lib /lib \
   --symlink usr/lib64 /lib64 \
-  --ro-bind /etc /etc \
+  --ro-bind /etc/ssl /etc/ssl \
+  --ro-bind "$HOSTS_FILE" /etc/hosts \
+  --ro-bind "$OUT/sandbox-etc/resolv.conf" /etc/resolv.conf \
+  --ro-bind /etc/nsswitch.conf /etc/nsswitch.conf \
   --proc /proc \
   --dev /dev \
   --ro-bind "$REPO" "$REPO" \
