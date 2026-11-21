@@ -225,7 +225,55 @@ DEFAULT_MAX_FAKES = 25
 # (the gate reads it size-capped at 4 MiB regardless — see orchestrator/kbscan.py).
 MAX_TRIAGE_BREACHES = 100
 INVENTORY_FILE = SCAN_DIR / "inventory.json"
+HISTORY_FILE = ROOT / "runs" / "_index" / "history.json"
 WATCHLIST_FILE = ROOT / "watchlist.md"
+
+MAX_HISTORY_BYTES = 512 * 1024  # history.json is itself capped at 512 KiB by the indexer
+
+
+def load_history() -> dict:
+    """Read runs/_index/history.json (written by orchestrator/history.py) with a size cap.
+
+    Untrusted input like everything else: oversized or malformed -> {} (no history targeting).
+    Used ONLY to aim simulated fakes at what past runs struggled with — never to alter verdicts.
+    """
+    try:
+        if HISTORY_FILE.stat().st_size > MAX_HISTORY_BYTES:
+            return {}
+        data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def build_history_fakes(history: dict, cases: dict) -> list[dict]:
+    """Fakes aimed at the weak spots the history index reports: advisories with simulator
+    downgrades or breaches, and repos whose verdicts kept landing in needs_human.
+    Every fake stays status:'unverified' + SIMULATED — targeting changes aim, not trust."""
+    fakes: list[dict] = []
+    host = cases["inject_host"]
+    advisories = history.get("advisories") or {}
+    for adv_id, info in sorted(advisories.items(), key=lambda kv: -(kv[1].get("sim_downgrades", 0) + len(kv[1].get("breaches_over_time") or []))):
+        if not isinstance(adv_id, str) or not adv_id:
+            continue
+        fakes.append({
+            "tier": 2, "kind": "cve", "id": f"SIM-{adv_id}", "package": "history-targeted",
+            "title": f"SIMULATED fake re-using a previously flagged advisory id (human review pending)",
+            "source": "sim-triage feedback loop", "status": "unverified", "SIMULATED": True,
+            "payload_curl": f"curl http://{host}/hist/{adv_id}",
+        })
+        if len(fakes) >= 5:
+            break
+    repos = history.get("repos") or {}
+    weak = [r for r, info in repos.items() if any(v.get("verdict") == "needs_human" for v in (info.get("verdicts") or []) if isinstance(v, dict))]
+    for repo in weak[:3]:
+        fakes.append({
+            "tier": 3, "kind": "lead", "id": f"SIM-REPO-{repo}", "package": repo,
+            "title": "SIMULATED lead aimed at a repo with past needs_human verdicts",
+            "source": "history index", "status": "unverified", "SIMULATED": True,
+            "payload_curl": f"curl http://{host}/repo/{repo}",
+        })
+    return fakes
 
 
 def load_inventory() -> dict:
@@ -300,7 +348,8 @@ def clamp_max_fakes(value: int) -> int:
     return capped
 
 
-def build_fake_findings(cases: dict, max_fakes: int, from_inventory: bool = False) -> list[dict]:
+def build_fake_findings(cases: dict, max_fakes: int, from_inventory: bool = False,
+                        from_history: bool = False) -> list[dict]:
     """Base adversarial cases from the fixture (+ high-fidelity inventory fakes when
     from_inventory), topped up (or truncated) to max_fakes.
 
@@ -315,6 +364,8 @@ def build_fake_findings(cases: dict, max_fakes: int, from_inventory: bool = Fals
     base = [dict(f) for f in cases["fake_findings"]]
     if from_inventory:
         base = base + build_inventory_fakes(load_inventory(), cases)
+    if from_history:
+        base = base + build_history_fakes(load_history(), cases)
     fakes = base[:max_fakes]
     host = cases["inject_host"]
     for i in range(len(base), max_fakes):
@@ -335,10 +386,10 @@ def build_fake_findings(cases: dict, max_fakes: int, from_inventory: bool = Fals
 
 
 def cmd_generate(out_dir: Path, run_id: str, max_fakes: int = DEFAULT_MAX_FAKES,
-                 from_inventory: bool = False) -> int:
+                 from_inventory: bool = False, from_history: bool = False) -> int:
     cases = load_cases()
     max_fakes = clamp_max_fakes(max_fakes)
-    fakes = build_fake_findings(cases, max_fakes, from_inventory)
+    fakes = build_fake_findings(cases, max_fakes, from_inventory, from_history)
     sim = Path(out_dir)
     shards = sim / "shards"
     adversarial = shards / "sim-adversarial"
@@ -655,12 +706,12 @@ def validate_verdict_shape(verdict: object, cases: dict) -> list[str]:
 
 
 def cmd_run(out_dir: Path, run_id: str, max_fakes: int = DEFAULT_MAX_FAKES,
-            cumulative: dict | None = None, from_inventory: bool = False) -> int:
+            cumulative: dict | None = None, from_inventory: bool = False, from_history: bool = False) -> int:
     cases = load_cases()
     sim = Path(out_dir)
     if not (sim / "shards").is_dir():
         print("no simulated shards found; generating first", file=sys.stderr)
-        cmd_generate(sim, run_id, max_fakes, from_inventory)
+        cmd_generate(sim, run_id, max_fakes, from_inventory, from_history)
     manifest = json.loads((sim / "manifest.json").read_text(encoding="utf-8")) if (sim / "manifest.json").exists() else {}
     fake_ids = manifest.get("fake_finding_ids") or [f["id"] for f in cases["fake_findings"]]
     inv_fake_ids = manifest.get("inventory_fake_ids") or []
@@ -933,7 +984,7 @@ def cmd_run(out_dir: Path, run_id: str, max_fakes: int = DEFAULT_MAX_FAKES,
 
 
 def cmd_loop(out_dir: Path, run_id: str, interval: int, max_runs: int, max_fakes: int = DEFAULT_MAX_FAKES,
-             from_inventory: bool = False) -> int:
+             from_inventory: bool = False, from_history: bool = False) -> int:
     """Continuous fuzzing: each cycle generates a fresh batch and runs the pipeline;
     sim-triage.json accumulates cumulative metrics across cycles."""
     worst = 0
@@ -1077,6 +1128,8 @@ def main() -> int:
                        help=f"flood cap: max fakes per cycle (default {DEFAULT_MAX_FAKES}, hard max {MAX_FAKES_HARD_CAP})")
         p.add_argument("--from-inventory", action="store_true",
                        help="also generate high-fidelity fakes targeting real tools/scan/inventory.json entries")
+        p.add_argument("--from-history", action="store_true",
+                       help="also aim fakes at weak spots from runs/_index/history.json (past sim downgrades, breaches, needs_human repos)")
 
     gen = sub.add_parser("generate", help="write SIMULATED fake report/sync/verdict docs under --out")
     add_common(gen)
@@ -1090,12 +1143,13 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command == "generate":
-        return cmd_generate(Path(args.out), args.run_id, args.max_fakes, args.from_inventory)
+        return cmd_generate(Path(args.out), args.run_id, args.max_fakes, args.from_inventory, args.from_history)
     if args.command == "run":
-        return cmd_run(Path(args.out), args.run_id, args.max_fakes, from_inventory=args.from_inventory)
+        return cmd_run(Path(args.out), args.run_id, args.max_fakes, from_inventory=args.from_inventory,
+                       from_history=args.from_history)
     if args.command == "loop":
         return cmd_loop(Path(args.out), args.run_id, args.interval, args.max_runs, args.max_fakes,
-                        args.from_inventory)
+                        args.from_inventory, args.from_history)
     if args.command == "selftest":
         return cmd_selftest()
     return 2

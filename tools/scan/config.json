@@ -1,0 +1,28 @@
+{
+  "inventory": "tools/scan/inventory.json",
+  "interval_secs": 300,
+  "max_runs": 0,
+  "out_dir": "tools/scan/out",
+  "git_remote": "origin",
+  "http_timeout_secs": 60,
+  "max_body_bytes": 8388608,
+  "epss_threshold": 0.5,
+  "kev_recent_days": 30,
+  "feeds": { "kev": true, "osv": true, "github": true, "epss": true, "nvd": false },
+  "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "KB_SCAN_IN_SANDBOX", "1", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc/ssl", "/etc/ssl", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out/sandbox-etc/hosts", "/etc/hosts", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out/sandbox-etc/resolv.conf", "/etc/resolv.conf", "--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26", "--bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out", "--chdir", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26"],
+  "explore": {
+    "enabled": true,
+    "max_per_cycle": 3,
+    "queries_file": "tools/scan/explore-queries.txt",
+    "agent_cmd": ["sh", "tools/scan/agent-vibe.sh"],
+    "agent_prompt_file": "tools/scan/explore-prompt.md",
+    "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/home/nikhil/.local/bin:/usr/bin:/bin", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc/ssl", "/etc/ssl", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out/sandbox-etc/hosts", "/etc/hosts", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out/sandbox-etc/resolv.conf", "/etc/resolv.conf", "--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26", "--bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out"]
+  },
+  "verify": {
+    "enabled": true,
+    "max_per_cycle": 5,
+    "agent_cmd": ["sh", "tools/scan/agent-vibe.sh"],
+    "agent_prompt_file": "tools/scan/verify-prompt.md",
+    "sandbox_cmd": ["bwrap", "--clearenv", "--setenv", "PATH", "/home/nikhil/.local/bin:/usr/bin:/bin", "--ro-bind", "/usr", "/usr", "--symlink", "usr/bin", "/bin", "--symlink", "usr/lib", "/lib", "--symlink", "usr/lib64", "/lib64", "--ro-bind", "/etc/ssl", "/etc/ssl", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out/sandbox-etc/hosts", "/etc/hosts", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out/sandbox-etc/resolv.conf", "/etc/resolv.conf", "--ro-bind", "/etc/nsswitch.conf", "/etc/nsswitch.conf", "--proc", "/proc", "--dev", "/dev", "--ro-bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26", "--bind", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out", "/home/nikhil/projects/mistral-ai-hackathon/MistralHackerthonNov26/tools/scan/out"]
+  }
+}

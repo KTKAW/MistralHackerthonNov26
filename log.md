@@ -203,3 +203,9 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - tools/scan/inventory.json
 - tools/scan/inventory.py
 - tools/scan/src/feeds.rs
+
+## [2026-11-21] edit | simulator --from-history: aim fakes at weak spots from runs/_index/history.json (closed feedback loop)
+
+- tools/scan/agent-vibe.sh
+- tools/scan/config.json
+- tools/scan/simulate.py
