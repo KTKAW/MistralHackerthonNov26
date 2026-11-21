@@ -38,7 +38,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from orchestrator import config, events, steps
+from orchestrator import config, events, kbscan, steps
 from orchestrator import gate as gate_checks
 from orchestrator import fetch_fleet
 from orchestrator.local import LOCAL, new_run_id
@@ -299,6 +299,23 @@ def get_events(run_id: str, after: int = 0) -> dict:
     _run_dir(run_id)
     found = events.read(run_id, max(0, after))
     return {"events": found, "next": found[-1]["n"] if found else max(0, after)}
+
+
+@app.get("/scan/latest")
+def scan_latest() -> dict:
+    """The kb-scan continuous poller's merged feed scan, as a small sanitised summary.
+
+    Read-only, and the document is untrusted feed data: size-capped parse, one-line markup-free
+    strings, capped item list. Empty when the engine has not run yet.
+    """
+    return {"scan": kbscan.summary(kbscan.latest())}
+
+
+@app.get("/runs/{run_id}/scan")
+def scan_for_run(run_id: str) -> dict:
+    """The kb-scan triage handoff for one run (runs/<run_id>/triage.json), sanitised the same way."""
+    _run_dir(run_id)
+    return {"run_id": run_id, "triage": kbscan.summary(kbscan.triage_for_run(run_id))}
 
 
 @app.get("/runs/{run_id}/stream")

@@ -21,7 +21,7 @@ import os
 import re
 from pathlib import Path
 
-from orchestrator import config
+from orchestrator import config, kbscan
 
 TITLES = {
     "affected_fixed": "Affected, proven and fixed",
@@ -118,6 +118,7 @@ def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | 
             lines += [f"- {repo}: no verdict and no reason given."]
 
     measures = sorted({_fix(v.get("fix") or {}) for v in affected if v.get("verdict") == "affected_fixed"})
+    lines += _feed_watch_section(run_id, advisory, runs_root)
     lines += [
         "",
         "## Notes for the 72-hour notification, Article 14(2)(b)",
@@ -145,6 +146,41 @@ def render_early_warning(run_id: str, gated_verdicts: list, *, runs_root: str | 
     temporary.write_text(text, encoding="utf-8")
     os.replace(temporary, run_dir / "early-warning.md")
     return text
+
+
+def _feed_watch_section(run_id: str, advisory: dict, runs_root: str | Path) -> list[str]:
+    """The kb-scan feed watch: what the continuous Rust poller saw that names this advisory.
+
+    Feed data, not verdicts: the engine polls CISA KEV, OSV, GitHub and FIRST EPSS and matches
+    them against this codebase's inventory. Nothing here was re-run by the gate; a person weighs it.
+    """
+    advisory_id = str(advisory.get("id", "")) if isinstance(advisory, dict) else ""
+    package = str(advisory.get("package", "")) if isinstance(advisory, dict) else ""
+    hits = kbscan.relevant_to_advisory(kbscan.latest(), advisory_id, package)
+    triage = kbscan.triage_for_run(run_id, runs_root)
+    if triage:
+        hits += [f for f in kbscan.relevant_to_advisory(triage, advisory_id, package) if f not in hits]
+    if not hits:
+        return []
+    lines = [
+        "",
+        "## Feed watch (kb-scan, continuous poller)",
+        "",
+        "> Feed matches from the Rust polling engine (KEV/OSV/GitHub/EPSS vs this repo's inventory).",
+        "> Unverified feed data: the gate did not re-run any of it. Weigh it, do not rely on it.",
+        "",
+    ]
+    for finding in hits[:10]:
+        lines.append(
+            f"- tier {kbscan.text(finding.get('tier', '?'), 8)} — "
+            f"`{_code(finding.get('cve', finding.get('id', '?')))}` "
+            f"{_code(finding.get('package', ''))} {_text(finding.get('title', finding.get('summary', '')), 140)} "
+            f"(source: {_text(finding.get('source', ''), 60)})"
+        )
+    if len(hits) > 10:
+        lines.append(f"- … and {len(hits) - 10} more in `tools/scan/out/latest.json`.")
+    lines.append("")
+    return lines
 
 
 def _pull_request_line(verdict: dict) -> list[str]:

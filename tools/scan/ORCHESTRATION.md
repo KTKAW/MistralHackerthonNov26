@@ -258,6 +258,26 @@ layer on top (pattern proven by the team on 21 Nov 2026: parallel activities via
   `rate-limited`; verifiers should treat OSV/NVD/EPSS as primary and GitHub as
   best-effort. One attempt per activity, no retries on half-verified findings.
 
+## Live integration (branch `integration/scan-engine-le-chonk`)
+
+Implemented against track C v2's `orchestrator/` + `web/`, all read-only on scan output
+and all treating scan documents as untrusted input (size-capped parse, malformed → ignored,
+one-line markup-free strings):
+
+- `orchestrator/kbscan.py` — the bridge. Reads `tools/scan/out/latest.json`,
+  `runs/<run_id>/triage.json`, `runs/<run_id>/sim-triage.json`; `summary()` for the web grid,
+  `relevant_to_advisory()` for report matching.
+- `orchestrator/gate.py` — `_apply_sim_triage()`: applies the gate-sim-triage patch in code.
+  A simulator gate-rule that a human has not reviewed downgrades every verdict naming that
+  advisory to `needs_human` — the only change the gate may make.
+- `orchestrator/report.py` — `_feed_watch_section()`: the draft early warning gains a
+  "Feed watch (kb-scan)" section listing engine findings that name the advisory's CVE/package,
+  explicitly labelled unverified feed data.
+- `web/app.py` — `GET /scan/latest` and `GET /runs/{run_id}/scan`: sanitised scan summaries
+  for the grid. The GUI (Rust) should prefer `kb-scan serve` on 127.0.0.1 for live polling and
+  use these endpoints for run-scoped views.
+- Tests: `orchestrator/tests/test_kbscan.py` (6 tests, no fleet needed).
+
 ## Explorer / verifier orchestration (the brain stays in Rust)
 
 The swarm gains two shard types, orchestrated by the Rust supervisor. The Rust

@@ -38,7 +38,7 @@ import jsonschema
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
-from orchestrator import config, events
+from orchestrator import config, events, kbscan
 
 SCHEMA_PATH = config.REPO_ROOT / "schema" / "verdict.schema.json"
 IGNORED_DIRS = {".venv", "__pycache__", ".pytest_cache", ".git", ".mypy_cache", ".ruff_cache", "node_modules"}
@@ -102,7 +102,47 @@ def gate(run_id: str, verdicts: list, *, runs_root: str | Path = "runs", wheelho
             events.append(run_dir, "gate", "The gate hit an error of its own. The claim goes to a person.", repo=_repo_name(verdict), kind="fail")
         _persist(run_dir, result)
         gated.append(result)
+    _apply_sim_triage(run_dir, gated)
     return gated
+
+
+def _apply_sim_triage(run_dir: Path, gated: list) -> None:
+    """The adversarial simulator's feedback (tools/scan/patches/gate-sim-triage.patch.md).
+
+    runs/<run_id>/sim-triage.json is untrusted input: it is read size-capped (kbscan does that)
+    and a malformed file changes nothing. When the simulator flagged an advisory as a gate rule
+    that a human has not reviewed, every verdict claiming that advisory is downgraded to
+    "needs_human" — the only change the gate may ever make.
+    """
+    sim = kbscan.sim_triage_for_run(run_dir.name, run_dir.parent)
+    if not sim:
+        return
+    defenses = sim.get("defenses") or {}
+    breaches = defenses.get("breaches") or []
+    if not isinstance(breaches, list):
+        breaches = []
+    feedback = sim.get("feedback") or {}
+    entries = feedback.get("entries") if isinstance(feedback, dict) else None
+    flagged = set()
+    if isinstance(entries, list):
+        for entry in entries:
+            if (
+                isinstance(entry, dict)
+                and entry.get("type") == "gate-rule"
+                and isinstance(entry.get("advisory_id"), str)
+                and not entry.get("human_reviewed")
+            ):
+                flagged.add(entry["advisory_id"])
+    if not flagged:
+        return
+    for verdict in gated:
+        advisory = verdict.get("advisory") or {}
+        if isinstance(advisory, dict) and advisory.get("id") in flagged and verdict.get("verdict") != "needs_human":
+            verdict["gate"] = {**(verdict.get("gate") or {}),
+                               "sim_triage": f"downgraded: adversarial sim breach ({len(breaches)} breach(es))"}
+            verdict["verdict"] = "needs_human"
+            events.append(run_dir, "gate", "The adversarial simulator flagged this advisory; the claim goes to a person.",
+                          repo=_repo_name(verdict), kind="fail")
 
 
 # ---------------------------------------------------------------- one verdict

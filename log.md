@@ -138,3 +138,9 @@ GitHub draws the Mermaid blocks, but its built-in view of the large system diagr
 - tools/scan/bwrap.example.sh
 - tools/scan/config.example.json
 - tools/scan/patches/gate-sim-triage.patch.md
+
+## [2026-11-21] edit | merge main into scan-engine (unrelated histories) for PR targeting
+
+## [2026-11-21] edit | integrate kb-scan with Le Chonk track-c-v2: kbscan bridge, gate sim-triage downgrade, report feed-watch, web /scan endpoints
+
+- tools/scan/ORCHESTRATION.md
