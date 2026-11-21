@@ -1,0 +1,30 @@
+(version 1)
+(deny default)
+
+;; processes may exec/fork/signal
+(allow process-exec*)
+(allow process-fork)
+(allow signal (target self))
+(allow sysctl-read)
+(allow mach-lookup)
+
+;; NO NETWORK
+(deny network*)
+
+;; READS: broad on purpose. On macOS 26.3 (Seatbelt), a deny-default profile whose
+;; file-read* allows cover only narrow subpaths makes the sandboxed child die with
+;; SIGABRT at startup; (subpath "/") is the only form that lets processes start.
+;; Secrets are then carved out with deny rules (deny wins over allow):
+(allow file-read* (subpath "/"))
+(allow file-read* (subpath "__PYDIR__"))            ;; uv-managed CPython installs (venv interpreters)
+(deny file-read* (regex "/\\.env($|/)"))          ;; any .env anywhere
+(deny file-read* (subpath "__WORKDIR__/secrets"))
+(deny file-read* (subpath "__VIBEHOME__"))         ;; the worker's VIBE_HOME (holds the API key)
+(deny file-read* (subpath "/Users/kymani/.vibe"))  ;; the human's real Vibe home
+(deny file-read* (literal "/private/dev/urandom"))
+
+;; WRITES: only inside the work copy and temp dirs (realpaths: /tmp -> /private/tmp)
+(allow file-write* (subpath "__WORKDIR__"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (subpath "/private/var/tmp"))
+(allow file-write* (subpath "/dev/null"))

@@ -1,0 +1,32 @@
+#!/bin/sh
+# douane — run a command with a scrubbed environment inside the macOS sandbox.
+# Vibe passes its .env contents to shell children; env -i stops that leak.
+#
+# Usage: douane '<shell command>'
+# Requires SANDBOX_WORKDIR to point at the work copy (the Seatbelt write/read boundary).
+set -u
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+WORKDIR="${SANDBOX_WORKDIR:?SANDBOX_WORKDIR must point at the work copy}"
+# Seatbelt matches realpaths — normalize so ".." never leaks into a subpath filter.
+WORKDIR="$(cd "$WORKDIR" && pwd)"
+# CPython installs managed by uv live outside /usr — the seatbelt profile must be
+# allowed to read them or the work-copy venv's interpreter cannot start.
+PYDIR="${SANDBOX_PYTHON_DIR:-/Users/kymani/.local/share/uv/python}"
+VIBEHOME="${SANDBOX_VIBE_HOME:-$DIR/../vibe-home}"
+VIBEHOME="$(cd "$VIBEHOME" && pwd)"
+
+PROFILE="$(mktemp /tmp/le-chonk-profile.XXXXXX.sb)"
+trap 'rm -f "$PROFILE"' EXIT
+sed -e "s|__WORKDIR__|$WORKDIR|g" -e "s|__PYDIR__|$PYDIR|g" -e "s|__VIBEHOME__|$VIBEHOME|g" \
+  "$DIR/profile.sb.template" > "$PROFILE"
+
+rc=0
+env -i \
+  HOME="${HOME:-/Users/$(whoami)}" \
+  PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+  TMPDIR="${TMPDIR:-/tmp}" \
+  LANG="${LANG:-C.UTF-8}" \
+  SANDBOX_WORKDIR="$WORKDIR" \
+  sandbox-exec -f "$PROFILE" /bin/bash -c "$*" || rc=$?
+exit "$rc"
